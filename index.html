@@ -160,7 +160,7 @@ label.f{display:block; font-size:13.5px; color:var(--muted); margin:12px 0 4px; 
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-06-1";
+var APP_VERSION = "2026-11-06-2";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -467,7 +467,7 @@ function renderPeople(){
   var bi = balanceInfo(), ws = weeklyPeople().length;
   var daily = S.people.filter(function(p){ return p.circle==="daily"; }), monthly = S.people.filter(function(p){ return p.circle==="monthly"; });
   var h = '<h2>사람 · 기도 순서</h2><div class="small muted">매일 '+daily.length+'명 · 매주 '+ws+'명 (하루 평균 '+(ws/7).toFixed(1)+'명) · 한 달 '+monthly.length+'명</div>'+
-    '<div class="actions"><button class="btn primary" data-act="newPerson">＋ 사람 추가</button>'+(("contacts" in navigator && "ContactsManager" in window)?'<button class="btn" data-act="importContacts">📇 연락처에서 불러오기</button>':'')+'</div>'+
+    '<div class="actions"><button class="btn primary" data-act="newPerson">＋ 사람 추가</button>'+(("contacts" in navigator && "ContactsManager" in window)?'<button class="btn" data-act="importContacts">📇 연락처에서</button>':'')+'</div>'+
     '<div class="seg" style="margin-top:14px"><button data-act="pview" data-v="day" class="'+(UI.peopleView==="day"?"on":"")+'">요일별</button><button data-act="pview" data-v="group" class="'+(UI.peopleView==="group"?"on":"")+'">그룹별</button></div>';
   if(bi.uneven) h += '<div class="banner warn">요일마다 분량 차이가 큽니다. <button class="linkbtn" data-act="rebalance">고르게 다시 나누기 ›</button></div>';
   if(bi.perDay > (S.settings.cap||10)) h += '<div class="banner warn">매주 원이 하루 평균 '+bi.perDay.toFixed(1)+'명으로 상한('+S.settings.cap+'명)을 넘습니다. 몇 분을 "한 달" 원으로 옮겨 보세요.</div>';
@@ -811,18 +811,40 @@ var ACT = {
   pview:function(b){ UI.peopleView=b.dataset.v; render(); },
   rebalance:function(){ if(!confirm("고정(📌)하지 않은 분들의 요일을 고르게 다시 나눌까요?")) return; rebalance(); render(); toast("요일을 고르게 다시 나누었습니다"); },
   importContacts:function(){
-    navigator.contacts.select(["name","tel"], {multiple:true}).then(function(list){
-      if(!list || !list.length) return;
-      var rows = list.map(function(c){ return {name:(c.name&&c.name[0])||"", tel:(c.tel&&c.tel[0])||""}; }).filter(function(r){ return r.name; });
-      var h = '<div class="small">'+rows.map(function(r){ return esc(r.name)+(r.tel?' <span class="muted">'+esc(r.tel)+'</span>':''); }).join("<br>")+'</div>'+
+    try{ sessionStorage.setItem("swgido.picking","1"); }catch(e){}
+    var pick = navigator.contacts.select(["name","tel"], {multiple:true});
+    Promise.resolve(pick).then(function(list){
+      try{ sessionStorage.removeItem("swgido.picking"); }catch(e){}
+      if(!list || !list.length){ toast("고른 연락처가 없습니다"); return; }
+      var rows = list.map(function(c){
+        var tels = (c.tel||[]).filter(Boolean), mob = tels.filter(function(x){ return /^(\+82\s?)?0?1[0-9]/.test(x.replace(/[\s-]/g,"")); });
+        return {name:String((c.name&&c.name[0])||"").trim(), tel:(mob[0]||tels[0]||"").trim()};
+      }).filter(function(r){ return r.name; });
+      if(!rows.length){ toast("이름이 있는 연락처가 없습니다"); return; }
+      /* 1) 받자마자 먼저 저장 (매주, 그룹 없음) — 다음 화면이 안 떠도 사람은 남도록 */
+      var added = [];
+      rows.forEach(function(r){
+        var ex = S.people.filter(function(p){ return p.name===r.name; })[0];
+        if(ex){ if(!ex.phone && r.tel){ ex.phone=r.tel; } return; }
+        var p={id:uid(), name:r.name, phone:r.tel, groupId:"", circle:"weekly", day:null, dayFixed:false, birthday:"", memo:"", created:today(), lastContact:""};
+        S.people.push(p); assignPerson(p); added.push(p);
+      });
+      save(); render();
+      if(!added.length){ toast("이미 있는 분입니다 (번호만 채웠습니다)"); return; }
+      /* 2) 그룹·횟수 정하기 */
+      var h = '<div class="small">'+added.map(function(p){ return esc(p.name)+(p.phone?' <span class="muted">'+esc(p.phone)+'</span>':''); }).join("<br>")+'</div>'+
+        '<div class="tiny muted" style="margin-top:6px">우선 "매주"로 넣어 두었습니다. 그룹과 횟수를 고르고 저장하세요.</div>'+
         '<label class="f">그룹</label><select id="icGroup">'+groupOptions("")+'</select><label class="f">얼마나 자주</label>'+radio("icCircle", [["daily","매일"],["weekly","매주"],["monthly","한 달"]], "weekly")+
-        '<div class="actions"><button class="btn primary block" id="icSave">'+rows.length+'명 넣기</button></div>';
-      openSheet("연락처에서 불러오기", h, function(){ $("#icSave").onclick=function(){
+        '<div class="actions"><button class="btn primary block" id="icSave">저장</button></div>';
+      openSheet(added.length+"명을 넣었습니다", h, function(){ $("#icSave").onclick=function(){
         var g=$("#icGroup").value, c=radioVal("icCircle")||"weekly";
-        rows.forEach(function(r){ var p={id:uid(), name:r.name, phone:r.tel, groupId:g, circle:c, day:null, dayFixed:false, birthday:"", memo:"", created:today(), lastContact:""}; S.people.push(p); assignPerson(p); });
-        save(); closeSheet(); render(); toast(rows.length+"명을 넣었습니다");
+        added.forEach(function(p){ p.groupId=g; if(p.circle!==c){ p.circle=c; p.day=null; p.slot=null; } else { p.day=null; } assignPerson(p); });
+        save(); closeSheet(); render(); toast(added.length===1 ? added[0].name+"님 — "+(c==="weekly"?DOW[added[0].day]+"요일":circleName(c)) : added.length+"명을 저장했습니다");
       }; });
-    }).catch(function(){});
+    }).catch(function(err){
+      try{ sessionStorage.removeItem("swgido.picking"); }catch(e){}
+      toast("연락처를 가져오지 못했습니다: "+((err&&(err.name||err.message))||"알 수 없는 오류"));
+    });
   },
   contacted:function(b){ var p=person(b.dataset.id); if(p){ p.lastContact=today(); save(); } },
   msg:function(b){ var p=person(b.dataset.id); if(p) msgSheet(p, b.dataset.kind); },
@@ -927,6 +949,9 @@ if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){
 if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function(){});
 
 load(); render();
+try{ if(sessionStorage.getItem("swgido.picking")){ sessionStorage.removeItem("swgido.picking"); setTimeout(function(){ toast("연락처를 고르는 사이 화면이 새로 열려 추가되지 않았습니다. 한 번 더 해 주세요"); }, 400); } }catch(e){}
+window.addEventListener("error", function(e){ toast("오류: "+(e.message||"")); });
+window.addEventListener("unhandledrejection", function(e){ var r=e.reason; toast("오류: "+((r&&(r.message||r.name))||r||"")); });
 </script>
 </body>
 </html>
