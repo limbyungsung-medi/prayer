@@ -160,7 +160,7 @@ label.f{display:block; font-size:13.5px; color:var(--muted); margin:12px 0 4px; 
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-06-3";
+var APP_VERSION = "2026-11-06-4";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -810,22 +810,23 @@ var ACT = {
   pickWeek:function(){ var n=note($("#pickSel").value); if(!n) return; var wk=weekStart(today()); S.notes.forEach(function(x){ if(x.pick===wk) x.pick=""; }); n.pick=wk; save(); render(); toast("이번 주 개인 기도에 올라옵니다"); },
   pview:function(b){ UI.peopleView=b.dataset.v; render(); },
   rebalance:function(){ if(!confirm("고정(📌)하지 않은 분들의 요일을 고르게 다시 나눌까요?")) return; rebalance(); render(); toast("요일을 고르게 다시 나누었습니다"); },
-  importContacts:function(){
+  importContacts:function(b){
+    var single = b && b.dataset && b.dataset.single==="1";
     var supported = ("contacts" in navigator) && navigator.contacts && navigator.contacts.select;
     openSheet("연락처에서 가져오기", '<div id="icStatus" class="banner">'+(supported?'휴대폰 연락처 창이 열립니다. 고른 뒤 "완료"를 누르세요…':'이 브라우저에서는 연락처 창을 열 수 없습니다.')+'</div>'+
-      '<h3>다른 방법 — 붙여넣기</h3><div class="tiny muted">연락처 앱에서 사람을 골라 <b>공유 → 텍스트(또는 클립보드에 복사)</b> 한 뒤 아래에 붙여넣으세요. "홍길동 010-1234-5678"처럼 한 줄에 한 사람씩 직접 적어도 됩니다.</div>'+
+      '<h3>다른 방법 — 붙여넣기</h3><div class="tiny muted">삼성 연락처 앱에서 사람을 열고 <b>공유 → "텍스트"</b>를 고른 뒤, 공유 창에서 <b>복사</b>를 누르고 아래에 붙여넣으세요. 여러 명을 한꺼번에 골라 공유해도 됩니다. "홍길동 010-1234-5678"처럼 한 줄에 한 사람씩 직접 적어도 됩니다.</div>'+
       '<textarea id="icPaste" style="margin-top:8px;min-height:110px" placeholder="홍길동 010-1234-5678&#10;김철수 010-9876-5432"></textarea>'+
       '<div class="actions"><button class="btn" data-act="icPasteBtn">📋 붙여넣기</button><button class="btn primary" data-act="icParse">이 내용으로 넣기</button></div>');
     if(!supported) return;
     try{ sessionStorage.setItem("swgido.picking","1"); }catch(e){}
     var st = function(m){ var e=$("#icStatus"); if(e) e.innerHTML=m; };
     var pick;
-    try{ pick = navigator.contacts.select(["name","tel"], {multiple:true}); }
+    try{ pick = single ? navigator.contacts.select(["name","tel"]) : navigator.contacts.select(["name","tel"], {multiple:true}); }
     catch(err){ st("연락처 창을 열지 못했습니다: "+esc(err && (err.name+" "+err.message))+"<br>아래 붙여넣기를 써 주세요."); return; }
     Promise.resolve(pick).then(function(list){
       try{ sessionStorage.removeItem("swgido.picking"); }catch(e){}
       var raw = ""; try{ raw = JSON.stringify(list).slice(0,300); }catch(e){ raw = String(list); }
-      if(!list || !list.length){ st("받은 연락처가 없습니다 (받은 내용: "+esc(raw)+")<br>아래 붙여넣기를 써 주세요."); return; }
+      if(!list || !list.length){ st("휴대폰이 연락처를 넘겨주지 않았습니다 (받은 내용: "+esc(raw)+")."+(single?"<br>아래 붙여넣기를 써 주세요.":'<div class="actions"><button class="btn sm" data-act="importContacts" data-single="1">한 명씩 골라 다시 해 보기</button></div>')); return; }
       var rows = list.map(function(c){
         var nm = c && c.name; nm = Array.isArray(nm) ? nm[0] : nm;
         var tels = c && c.tel; tels = Array.isArray(tels) ? tels.filter(Boolean) : (tels ? [tels] : []);
