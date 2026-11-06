@@ -140,6 +140,10 @@ label.f{display:block; font-size:13.5px; color:var(--muted); margin:12px 0 4px; 
 .tl .ent::before{content:""; position:absolute; left:-6px; top:10px; width:10px; height:10px; border-radius:50%; background:var(--accent);}
 .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(150px + env(safe-area-inset-bottom)); background:var(--text); color:var(--bg); padding:10px 16px; border-radius:12px; z-index:80; font-size:15px; font-weight:600; max-width:88vw; text-align:center; box-shadow:var(--shadow);}
 .help p{margin:6px 0;} .help h3{margin-top:18px;}
+.vini{display:flex; flex-wrap:wrap; gap:3px; margin-top:8px; position:sticky; top:46px; z-index:2; background:var(--card); padding:4px 0;}
+.vini button{min-width:30px; height:30px; border:1px solid var(--line); background:var(--bg); border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; color:var(--text); padding:0 4px;}
+.vini button:disabled{opacity:.25;}
+.vrow{content-visibility:auto; contain-intrinsic-size:auto 58px; scroll-margin-top:130px;}
 .linkbtn{background:none; border:0; color:var(--accent); font-weight:700; cursor:pointer; padding:0; font-size:inherit;}
 </style>
 </head>
@@ -161,7 +165,7 @@ label.f{display:block; font-size:13.5px; color:var(--muted); margin:12px 0 4px; 
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-06-5";
+var APP_VERSION = "2026-11-06-6";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -880,7 +884,9 @@ var ACT = {
     });
   },
   pickVcf:function(){ $("#vcfIn").click(); },
-  vAll:function(b){ var on=b.dataset.v==="1", q=VCF.q.trim().toLowerCase(); VCF.rows.forEach(function(r,i){ if(!q || (r.name+" "+r.tel+" "+r.memo+" "+r.cats).toLowerCase().indexOf(q)>=0) VCF.sel[i]=on; }); VCF.g=$("#vGroup").value; VCF.c=radioVal("vCircle"); vcfSheet(); },
+  vAll:function(b){ var on=b.dataset.v==="1"; if(on){ VCF.rows.forEach(function(r,i){ if(vMatch(r,i)) VCF.sel[i]=true; }); } else { VCF.sel={}; } renderVcfList(); },
+  vFilter:function(b){ VCF.f=b.dataset.f; document.querySelectorAll("#vFilters button").forEach(function(x){ var on=x===b; x.style.background=on?"var(--accent)":""; x.style.color=on?"var(--accentInk)":""; x.style.borderColor=on?"var(--accent)":""; x.style.fontWeight=on?"700":""; }); renderVcfList(); },
+  vJump:function(b){ var el=document.getElementById("vini-"+b.dataset.k); if(el) el.scrollIntoView({block:"start"}); },
   vAdd:function(){
     var idx = Object.keys(VCF.sel).filter(function(k){ return VCF.sel[k]; }).map(Number); if(!idx.length) return toast("먼저 사람을 골라 주세요");
     var g=$("#vGroup").value, c=radioVal("vCircle")||"weekly", nNew=0, nMerge=0;
@@ -888,7 +894,7 @@ var ACT = {
       if(ex){ mergePerson(ex, r); nMerge++; }
       else { var p={id:uid(), name:r.name, phone:r.tel, groupId:g, circle:c, day:null, dayFixed:false, birthday:r.birthday, anniversaries:r.anniversaries, memo:r.memo, created:today(), lastContact:""}; S.people.push(p); assignPerson(p); nNew++; }
       VCF.done[i]=true; VCF.sel[i]=false; });
-    save(); render(); VCF.g=g; VCF.c=c; vcfSheet();
+    save(); render(); VCF.g=g; VCF.c=c; renderVcfList();
     toast(nNew+"명을 넣었습니다"+(nMerge?" · "+nMerge+"명은 이미 있어 정보만 보탬":""));
   },
   icPasteBtn:function(){ if(!navigator.clipboard || !navigator.clipboard.readText) return toast("입력칸을 길게 눌러 붙여넣기 하세요"); navigator.clipboard.readText().then(function(x){ var ta=$("#icPaste"); ta.value=(ta.value?ta.value+"\n":"")+x; }).catch(function(){ toast("입력칸을 길게 눌러 붙여넣기 하세요"); }); },
@@ -1030,27 +1036,50 @@ function parseVcf(text){
       memo: [c.org, c.title, c.note].filter(Boolean).join("\n"), cats: c.cats};
   }).filter(function(r){ return r.name; });
 }
-var VCF = {rows:[], sel:{}, done:{}, q:""};
-function vcfSheet(){
-  var q = VCF.q.trim().toLowerCase();
-  var vis = VCF.rows.map(function(r,i){ return i; }).filter(function(i){ var r=VCF.rows[i]; return !q || (r.name+" "+r.tel+" "+r.memo+" "+r.cats).toLowerCase().indexOf(q)>=0; });
-  var nsel = Object.keys(VCF.sel).filter(function(k){ return VCF.sel[k]; }).length;
-  var listHtml = vis.slice(0,400).map(function(i){ var r=VCF.rows[i], ex=S.people.some(function(p){ return p.name===r.name; });
-    return '<label class="li" style="cursor:pointer;align-items:center"><input type="checkbox" class="vsel" data-i="'+i+'" '+(VCF.sel[i]?"checked":"")+' style="width:22px;height:22px;accent-color:var(--accent);flex:none"><div style="flex:1;min-width:0"><div><b>'+esc(r.name)+'</b> <span class="tiny muted">'+esc(r.tel)+'</span>'+(VCF.done[i]?' <span class="chip good">넣음</span>':(ex?' <span class="chip">이미 있음</span>':''))+'</div>'+
+var VCF = {rows:[], sel:{}, done:{}, q:"", f:"all"};
+var CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+function chosung(str){ var o=""; for(var i=0;i<str.length;i++){ var c=str.charCodeAt(i)-0xAC00; o += (c>=0 && c<11172) ? CHO.charAt(Math.floor(c/588)) : str.charAt(i); } return o; }
+function initialOf(name){ var c=name.charCodeAt(0)-0xAC00; if(c>=0 && c<11172){ var k=CHO.charAt(Math.floor(c/588)); return ({"ㄲ":"ㄱ","ㄸ":"ㄷ","ㅃ":"ㅂ","ㅆ":"ㅅ","ㅉ":"ㅈ"})[k]||k; } return /[a-z]/i.test(name.charAt(0)) ? "A" : "#"; }
+function vMatch(r, i){
+  var f = VCF.f;
+  if(f==="sel" && !VCF.sel[i]) return false;
+  if(f==="event" && !r.birthday && !r.anniversaries.length) return false;
+  if(f==="memo" && !r.memo) return false;
+  if(f==="new" && (VCF.done[i] || S.people.some(function(p){ return p.name===r.name; }))) return false;
+  var q = VCF.q.trim().toLowerCase().replace(/\s+/g,""); if(!q) return true;
+  if(/^[ㄱ-ㅎ]+$/.test(q)) return chosung(r.name).indexOf(q)>=0;
+  return (r.name+" "+r.tel+" "+r.tel.replace(/\D/g,"")+" "+r.memo+" "+r.cats).toLowerCase().replace(/\s+/g,"").indexOf(q)>=0;
+}
+function vSelCount(){ return Object.keys(VCF.sel).filter(function(k){ return VCF.sel[k]; }).length; }
+function renderVcfList(){
+  var vis = [], seen = {};
+  VCF.rows.forEach(function(r,i){ if(vMatch(r,i)) vis.push(i); });
+  var html = vis.map(function(i){ var r=VCF.rows[i], ex=S.people.some(function(p){ return p.name===r.name; }), ini=initialOf(r.name), anchor="";
+    if(!seen[ini]){ seen[ini]=1; anchor=' id="vini-'+ini+'"'; }
+    return '<label class="li vrow"'+anchor+' style="cursor:pointer;align-items:center"><input type="checkbox" class="vsel" data-i="'+i+'" '+(VCF.sel[i]?"checked":"")+' style="width:22px;height:22px;accent-color:var(--accent);flex:none"><div style="flex:1;min-width:0"><div><b>'+esc(r.name)+'</b> <span class="tiny muted">'+esc(r.tel)+'</span>'+(VCF.done[i]?' <span class="chip good">넣음</span>':(ex?' <span class="chip">이미 있음</span>':''))+'</div>'+
       '<div class="tiny muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(r.birthday?'🎂 '+esc(r.birthday)+' ':'')+r.anniversaries.map(function(a){ return '💐 '+esc(a.label)+' '+esc(a.date)+' '; }).join("")+(r.cats?'· '+esc(r.cats)+' ':'')+(r.memo?'· '+esc(r.memo.replace(/\n/g," ").slice(0,40)):'')+'</div></div></label>'; }).join("");
-  var h = '<div class="tiny muted">파일에서 '+VCF.rows.length+'명을 읽었습니다. 기도할 분들을 골라 그룹·횟수를 정하고 넣으세요. 그룹마다 나누어 여러 번 넣으면 편합니다.</div>'+
-    '<input type="text" id="vQ" value="'+esc(VCF.q)+'" placeholder="🔍 이름·번호·메모로 찾기" style="margin-top:8px">'+
-    '<div class="row" style="margin-top:6px"><button class="btn sm" data-act="vAll" data-v="1">보이는 사람 모두 선택</button><button class="btn sm ghost" data-act="vAll" data-v="0">선택 해제</button><span class="sp"></span><span class="small"><b id="vCount">'+nsel+'</b>명 선택</span></div>'+
-    '<div class="list" id="vList" style="margin-top:6px">'+(listHtml||'<div class="empty">찾는 사람이 없습니다.</div>')+'</div>'+(vis.length>400?'<div class="tiny muted">앞의 400명만 보입니다. 검색으로 좁혀 주세요.</div>':'')+
-    '<div style="position:sticky;bottom:-20px;background:var(--card);padding:10px 0 4px;border-top:1px solid var(--line);margin-top:8px">'+
+  $("#vList").innerHTML = html || '<div class="empty">해당하는 사람이 없습니다.</div>';
+  $("#vShown").textContent = vis.length;
+  $("#vCount").textContent = vSelCount();
+  var bar = "ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ".split("").concat(["A"]);
+  $("#vIni").innerHTML = bar.map(function(k){ return '<button type="button" data-act="vJump" data-k="'+k+'" '+(seen[k]?'':'disabled')+'>'+k+'</button>'; }).join("");
+}
+function vcfSheet(){
+  var fl = [["all","전체"],["sel","선택한 사람"],["event","생일·기념일 있음"],["memo","메모 있음"],["new","아직 안 넣은 사람"]];
+  var h = '<div class="tiny muted">파일에서 '+VCF.rows.length+'명을 읽었습니다. 기도할 분들을 골라 그룹·횟수를 정하고 넣으세요. 그룹마다 나누어 여러 번 넣으면 편합니다. 검색칸에 초성(예: ㄱㅎㅈ)으로도 찾을 수 있습니다.</div>'+
+    '<input type="text" id="vQ" value="'+esc(VCF.q)+'" placeholder="🔍 이름·초성·번호·메모로 찾기" style="margin-top:8px">'+
+    '<div class="wrapflex" style="margin-top:8px" id="vFilters">'+fl.map(function(x){ return '<button type="button" class="chip" style="padding:5px 11px;font-size:13.5px;cursor:pointer;'+(VCF.f===x[0]?'background:var(--accent);color:var(--accentInk);border-color:var(--accent);font-weight:700':'')+'" data-act="vFilter" data-f="'+x[0]+'">'+x[1]+'</button>'; }).join("")+'</div>'+
+    '<div class="vini" id="vIni"></div>'+
+    '<div class="row" style="margin-top:6px"><button class="btn sm" data-act="vAll" data-v="1">보이는 <span id="vShown"></span>명 모두 선택</button><button class="btn sm ghost" data-act="vAll" data-v="0">선택 해제</button><span class="sp"></span><span class="small"><b id="vCount">0</b>명 선택</span></div>'+
+    '<div class="list" id="vList" style="margin-top:6px"></div>'+
+    '<div style="position:sticky;bottom:-20px;background:var(--card);padding:10px 0 4px;border-top:1px solid var(--line);margin-top:8px;z-index:3">'+
     '<div class="row"><select id="vGroup" style="flex:1">'+groupOptions(VCF.g||"")+'</select></div><div style="margin-top:8px">'+radio("vCircle", [["daily","매일"],["weekly","매주"],["monthly","한 달"]], VCF.c||"weekly")+'</div>'+
     '<div class="actions" style="margin-top:8px"><button class="btn primary block" data-act="vAdd">선택한 사람 넣기</button></div></div>';
-  var keepScroll = $("#ov .sheet") ? $("#ov .sheet").scrollTop : 0;
   openSheet("연락처 파일 ("+VCF.rows.length+"명)", h, function(){
-    $("#ov .sheet").scrollTop = keepScroll;
+    renderVcfList();
     var qi = $("#vQ"), timer=null;
-    qi.addEventListener("input", function(){ clearTimeout(timer); timer=setTimeout(function(){ VCF.q=qi.value; VCF.g=$("#vGroup").value; VCF.c=radioVal("vCircle"); vcfSheet(); var n=$("#vQ"); n.focus(); n.setSelectionRange(n.value.length,n.value.length); }, 350); });
-    $("#vList").addEventListener("change", function(e){ var c=e.target.closest(".vsel"); if(!c) return; VCF.sel[c.dataset.i]=c.checked; $("#vCount").textContent=Object.keys(VCF.sel).filter(function(k){ return VCF.sel[k]; }).length; });
+    qi.addEventListener("input", function(){ clearTimeout(timer); timer=setTimeout(function(){ VCF.q=qi.value; renderVcfList(); }, 250); });
+    $("#vList").addEventListener("change", function(e){ var c=e.target.closest(".vsel"); if(!c) return; VCF.sel[c.dataset.i]=c.checked; $("#vCount").textContent=vSelCount(); });
   });
 }
 $("#vcfIn").addEventListener("change", function(e){
@@ -1059,7 +1088,7 @@ $("#vcfIn").addEventListener("change", function(e){
     var rows = []; try{ rows = parseVcf(r.result); }catch(err){ toast("파일을 읽지 못했습니다: "+err.message); return; }
     if(!rows.length){ toast("연락처를 찾지 못했습니다. .vcf 파일이 맞는지 확인해 주세요"); return; }
     rows.sort(function(a,b){ return a.name.localeCompare(b.name, "ko"); });
-    VCF = {rows:rows, sel:{}, done:{}, q:""}; vcfSheet();
+    VCF = {rows:rows, sel:{}, done:{}, q:"", f:"all"}; vcfSheet();
   };
   r.readAsText(f); e.target.value = "";
 });
