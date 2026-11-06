@@ -157,10 +157,11 @@ label.f{display:block; font-size:13.5px; color:var(--muted); margin:12px 0 4px; 
   <button data-act="tab" data-tab="answers"><span class="i">🌿</span>응답</button>
 </div></nav>
 <input type="file" id="fileIn" accept=".json,application/json" hidden>
+<input type="file" id="vcfIn" hidden>
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-06-4";
+var APP_VERSION = "2026-11-06-5";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -196,7 +197,8 @@ function defaultState(){
     settings: { cap:10, theme:"dark", short:false, lastBackup:"", started:today(),
       tpl:{ pray:"오늘 {이름}님을 위해 기도했어요. 요즘 어떠세요?",
             due:"어제 일은 어떻게 되었는지요? 계속 기도하고 있어요.",
-            answer:"기도하던 일이 응답되었다니 함께 하나님께 감사해요!" } }
+            answer:"기도하던 일이 응답되었다니 함께 하나님께 감사해요!",
+            bday:"{이름}님, 생일 축하드려요! 오늘 특별히 축복하며 기도했습니다." } }
   };
 }
 var S;
@@ -320,9 +322,37 @@ function specialsFor(t){
     if(age>=0 && age<=2) add(key, it.personId, it, "새 제목");
     if(it.due){ var dd=diff(t,it.due); if(dd===0) add(key,it.personId,it,"오늘"); else if(dd===1) add(key,it.personId,it,"내일"); else if(dd===-1) add(key,it.personId,it,"결과 묻기"); }
   });
-  S.people.forEach(function(p){ if(p.birthday && p.birthday===md) add(p.id, p.id, null, "생일 🎂"); });
+  S.people.forEach(function(p){ personEvents(p).forEach(function(ev){ if(ev.md===md) add(p.id, p.id, null, ev.label+(ev.kind==="birthday"?" 🎂":" 💐")); }); });
   return map;
 }
+/* 생일·기념일 */
+function normDate(v){
+  v = String(v||"").trim(); if(!v) return null; var m;
+  if((m=/^(\d{4})[-.\/년\s]*(\d{1,2})[-.\/월\s]*(\d{1,2})/.exec(v))) return {y:Number(m[1]), md:pad(m[2])+"-"+pad(m[3])};
+  if((m=/^(\d{4})(\d{2})(\d{2})$/.exec(v))) return {y:Number(m[1]), md:m[2]+"-"+m[3]};
+  if((m=/^-{1,2}(\d{2})-?(\d{2})$/.exec(v))) return {y:null, md:m[1]+"-"+m[2]};
+  if((m=/^(\d{1,2})[-.\/월\s]+(\d{1,2})/.exec(v))) return {y:null, md:pad(m[1])+"-"+pad(m[2])};
+  if((m=/^(\d{2})(\d{2})$/.exec(v))) return {y:null, md:m[1]+"-"+m[2]};
+  return null;
+}
+function personEvents(p){
+  var out = [], b = normDate(p.birthday);
+  if(b) out.push({kind:"birthday", label:"생일", md:b.md, y:b.y});
+  (p.anniversaries||[]).forEach(function(a){ var d=normDate(a.date); if(d) out.push({kind:"anniv", label:a.label||"기념일", md:d.md, y:d.y}); });
+  return out;
+}
+function daysUntilMD(t, md){
+  var y = Number(t.slice(0,4)), cand = y+"-"+md;
+  if(md==="02-29" && !(y%4===0 && (y%100!==0 || y%400===0))) cand = y+"-02-28";
+  var d = diff(t, cand); if(d<0){ cand=(y+1)+"-"+(md==="02-29"?"02-28":md); d = diff(t, cand); }
+  return d;
+}
+function upcomingEvents(t, days){
+  var list = [];
+  S.people.forEach(function(p){ personEvents(p).forEach(function(ev){ var n=daysUntilMD(t, ev.md); if(n>=1 && n<=days) list.push({p:p, ev:ev, n:n}); }); });
+  return list.sort(function(a,b){ return a.n-b.n; });
+}
+function evText(u){ var e=u.ev, yrs = e.y ? (Number(addDays(today(),u.n).slice(0,4))-e.y) : 0; return esc(u.p.name)+' '+esc(e.label)+(yrs>0&&yrs<130?' ('+(e.kind==="birthday"?'만 '+yrs+'세':yrs+'주년')+')':'')+' · '+Number(e.md.slice(0,2))+'/'+Number(e.md.slice(3))+' <span class="muted">('+(u.n===1?'내일':u.n+'일 뒤')+')</span>'; }
 function todayPlan(t){
   var sp = specialsFor(t), seen = {};
   var daily = S.people.filter(function(p){ return p.circle==="daily"; });
@@ -414,7 +444,8 @@ var STEP_BODY = {
     return h + '<div class="actions"><button class="btn sm" data-act="quickAdd" data-pid="me">＋ 나의 기도제목</button></div>';
   },
   intercede:function(t,L,p,short){
-    var h = "";
+    var h = "", up = upcomingEvents(t, 7);
+    if(up.length) h += '<div class="banner"><b>다가오는 기념일</b> — 미리 기도하고, 축하나 선물을 준비해 보세요'+up.map(function(u){ return '<div class="small" style="margin-top:4px;cursor:pointer" data-act="openPerson" data-id="'+u.p.id+'">🎁 '+evText(u)+'</div>'; }).join("")+'</div>';
     if(p.daily.length){ h += '<div class="secttl">매일</div>' + p.daily.map(function(x){ return pcard(x, L, p.sp[x.id]); }).join(""); }
     if(p.special.length){ h += '<div class="secttl">오늘 특별히 · 새 제목 · 긴급 · 날짜</div>' + p.special.map(function(e){ return e.pid ? pcard(person(e.pid), L, e) : inboxCard(e); }).join(""); }
     var cap = S.settings.cap||10;
@@ -467,8 +498,10 @@ function renderPeople(){
   var bi = balanceInfo(), ws = weeklyPeople().length;
   var daily = S.people.filter(function(p){ return p.circle==="daily"; }), monthly = S.people.filter(function(p){ return p.circle==="monthly"; });
   var h = '<h2>사람 · 기도 순서</h2><div class="small muted">매일 '+daily.length+'명 · 매주 '+ws+'명 (하루 평균 '+(ws/7).toFixed(1)+'명) · 한 달 '+monthly.length+'명</div>'+
-    '<div class="actions"><button class="btn primary" data-act="newPerson">＋ 사람 추가</button>'+'<button class="btn" data-act="importContacts">📇 연락처에서</button>'+'</div>'+
+    '<div class="actions"><button class="btn primary" data-act="newPerson">＋ 사람 추가</button>'+'<button class="btn" data-act="importContacts">📂 연락처 가져오기</button>'+'</div>'+
     '<div class="seg" style="margin-top:14px"><button data-act="pview" data-v="day" class="'+(UI.peopleView==="day"?"on":"")+'">요일별</button><button data-act="pview" data-v="group" class="'+(UI.peopleView==="group"?"on":"")+'">그룹별</button></div>';
+  var up30 = upcomingEvents(today(), 30);
+  if(up30.length) h += '<div class="card"><div style="font-weight:800;margin-bottom:4px">다가오는 생일·기념일 (30일 안)</div>'+up30.map(function(u){ return '<div class="small" style="padding:4px 0;cursor:pointer" data-act="openPerson" data-id="'+u.p.id+'">'+(u.ev.kind==="birthday"?"🎂 ":"💐 ")+evText(u)+'</div>'; }).join("")+'</div>';
   if(bi.uneven) h += '<div class="banner warn">요일마다 분량 차이가 큽니다. <button class="linkbtn" data-act="rebalance">고르게 다시 나누기 ›</button></div>';
   if(bi.perDay > (S.settings.cap||10)) h += '<div class="banner warn">매주 원이 하루 평균 '+bi.perDay.toFixed(1)+'명으로 상한('+S.settings.cap+'명)을 넘습니다. 몇 분을 "한 달" 원으로 옮겨 보세요.</div>';
   var chip = function(p){ var pin = (p.circle==="weekly" && (p.dayFixed || (group(p.groupId)||{}).fixedDay!=null)) ? '<span class="pin">📌</span>' : ''; var n=activeItemsOf(p.id).length; return '<span class="pchip" data-act="openPerson" data-id="'+p.id+'"><span class="dot" style="background:'+gColor(p.groupId)+'"></span>'+esc(p.name)+(n?'<span class="tiny muted">'+n+'</span>':'')+pin+'</span>'; };
@@ -575,8 +608,9 @@ function personSheet(p){
     '<label class="f">그룹</label><select id="pGroup">'+groupOptions(p.groupId)+'</select>'+
     '<label class="f">얼마나 자주</label>'+radio("pCircle", [["daily","매일"],["weekly","매주"],["monthly","한 달에 한 번"]], p.circle)+
     '<div id="pDayWrap" style="'+(p.circle==="weekly"?"":"display:none")+'"><label class="f">요일'+(p.id&&p.circle==="weekly"&&p.day!=null?' — 지금 '+DOW[p.day]+'요일':'')+'</label><select id="pDay">'+dayOpts+'</select></div>'+
-    '<label class="f">생일 (선택, 그날 축복 기도로 올라옴)</label><input type="text" id="pBirth" value="'+esc(p.birthday)+'" placeholder="예: 04-18" inputmode="numeric">'+
-    '<label class="f">메모</label><textarea id="pMemo" placeholder="관계, 기억할 것">'+esc(p.memo)+'</textarea>';
+    '<label class="f">생일 (그날 축복 기도로, 일주일 전부터 미리 알림)</label><input type="text" id="pBirth" value="'+esc(p.birthday)+'" placeholder="예: 04-18 또는 1963-04-18">'+
+    '<label class="f">기념일 (결혼기념일 등)</label><div id="annWrap">'+(p.anniversaries||[]).map(annRow).join("")+'</div><div class="actions" style="margin-top:6px"><button type="button" class="btn sm" data-act="addAnn">＋ 기념일</button></div>'+
+    '<label class="f">메모</label><textarea id="pMemo" placeholder="관계, 기억할 것" style="min-height:'+(p.memo&&p.memo.length>80?160:70)+'px">'+esc(p.memo)+'</textarea>';
   if(!isNew){
     h += '<h3>기도제목</h3>'+(its.length?'<div class="list">'+its.map(function(it){ return '<div class="li" data-act="openItem" data-id="'+it.id+'"><div style="flex:1"><div>'+(it.urgent&&it.status==="active"?'<span class="chip urgent">긴급</span> ':'')+esc(it.title)+'</div><div class="tiny muted">'+fmtDate(it.created)+' 등록'+(it.due?' · '+fmtDate(it.due):'')+' · 기도 '+(it.prayed||[]).length+'일</div></div>'+statusChip(it)+'</div>'; }).join("")+'</div>':'<div class="empty">아직 없습니다.</div>')+
       '<div class="actions"><button class="btn sm" data-act="quickAdd" data-pid="'+p.id+'">＋ 기도제목 추가</button></div>'+
@@ -586,6 +620,7 @@ function personSheet(p){
   openSheet(isNew?"사람 추가":p.name, h, function(){ $("#pName").focus && isNew && $("#pName").focus(); });
   RADIO_HOOK.pCircle = function(v){ $("#pDayWrap").style.display = v==="weekly" ? "" : "none"; };
 }
+function annRow(a){ a=a||{label:"",date:""}; return '<div class="row ann" style="margin-top:6px"><input type="text" class="annLabel" value="'+esc(a.label)+'" placeholder="결혼기념일" style="flex:1"><input type="text" class="annDate" value="'+esc(a.date)+'" placeholder="05-17" style="flex:1"><button type="button" class="iconbtn" data-act="delAnn" aria-label="지우기">✕</button></div>'; }
 function statusChip(it){ var m={active:["기도 중",""],answered:["응답","good"],other:["다르게 응답","good"],waiting:["기다림","warn"],released:["내려놓음",""]}[it.status]||["",""]; return '<span class="chip '+m[1]+'">'+m[0]+'</span>'; }
 
 /* 기도제목 시트 */
@@ -657,7 +692,7 @@ function qBody(kind, pid){
 /* 메시지 시트 */
 function msgSheet(p, kind){
   var t = today();
-  if(!kind){ kind = "pray"; if(S.items.some(function(it){ return it.personId===p.id && it.status==="active" && it.due && diff(it.due,t)===1; })) kind="due"; }
+  if(!kind){ kind = "pray"; var md0=t.slice(5); if(personEvents(p).some(function(ev){ return ev.md===md0; })) kind="bday"; else if(S.items.some(function(it){ return it.personId===p.id && it.status==="active" && it.due && diff(it.due,t)===1; })) kind="due"; }
   var txt = (S.settings.tpl[kind]||"").replace(/\{이름\}/g, p.name);
   var h = '<div class="tiny muted">문구를 고친 뒤 보낼 방법을 고르세요. 카카오톡은 공유 창에서 카카오톡 → 친구를 고르면 됩니다.</div><textarea id="mText" style="margin-top:8px;min-height:90px">'+esc(txt)+'</textarea>'+
     '<div class="actions"><button class="btn" data-act="sendSms" data-id="'+p.id+'" '+(p.phone?"":"disabled")+'>💬 문자</button><button class="btn kk" style="border-radius:10px;padding:9px 14px;font-size:15px" data-act="sendKakao" data-id="'+p.id+'">카카오톡</button><button class="btn" data-act="copyMsg" data-id="'+p.id+'">📋 복사</button></div>'+
@@ -673,7 +708,7 @@ function settingsSheet(){
     '<h3>그룹</h3><div class="tiny muted">이름을 고치거나, 특정 요일에 그룹 전체를 기도하려면 요일을 고르세요(예: 팀 모임 전날).</div>'+
     S.groups.map(function(g){ return '<div class="row" style="margin-top:8px"><span class="dot" style="background:'+g.color+'"></span><input type="text" data-gname="'+g.id+'" value="'+esc(g.name)+'" style="flex:2"><select data-gday="'+g.id+'" style="flex:1"><option value="">요일 자동</option>'+DOW.map(function(d,i){ return '<option value="'+i+'" '+(g.fixedDay===i?"selected":"")+'>'+d+' 고정</option>'; }).join("")+'</select><button class="iconbtn" data-act="delGroup" data-id="'+g.id+'" aria-label="그룹 삭제">🗑</button></div>'; }).join("")+
     '<div class="actions"><button class="btn sm" data-act="addGroup">＋ 그룹 추가</button></div>'+
-    '<h3>메시지 문구</h3><label class="f">기도 후 ({이름} 자리에 이름이 들어감)</label><input type="text" id="tPray" value="'+esc(st.tpl.pray)+'"><label class="f">날짜 다음 날 결과 묻기</label><input type="text" id="tDue" value="'+esc(st.tpl.due)+'"><label class="f">응답 후 함께 감사</label><input type="text" id="tAns" value="'+esc(st.tpl.answer)+'">'+
+    '<h3>메시지 문구</h3><label class="f">기도 후 ({이름} 자리에 이름이 들어감)</label><input type="text" id="tPray" value="'+esc(st.tpl.pray)+'"><label class="f">날짜 다음 날 결과 묻기</label><input type="text" id="tDue" value="'+esc(st.tpl.due)+'"><label class="f">응답 후 함께 감사</label><input type="text" id="tAns" value="'+esc(st.tpl.answer)+'"><label class="f">생일·기념일 축하</label><input type="text" id="tBday" value="'+esc(st.tpl.bday)+'">'+
     '<div class="actions"><button class="btn primary block" data-act="saveSettings">설정 저장</button></div>'+
     '<h3>백업</h3><div class="tiny muted">모든 기록은 이 휴대폰 안에만 있습니다. 백업 파일을 카카오톡 "나와의 채팅"이나 이메일·구글 드라이브로 보내 두세요. 마지막 백업: '+(st.lastBackup?fmtDate(st.lastBackup):"없음")+'</div>'+
     '<div class="actions"><button class="btn" data-act="backup">📤 백업 보내기</button><button class="btn" data-act="restore">📥 백업 불러오기</button></div>'+
@@ -687,6 +722,7 @@ function helpSheet(){
   '<h3>매일 기도</h3><p>"오늘" 화면에서 찬양 → 자백 → 감사 → 개인 → 중보 → 말씀 상기를 차례로 하고 "마침"을 누릅니다. 바쁜 날은 위의 "짧은 기도"를 누르면 꼭 필요한 것만 보입니다.</p>'+
   '<h3>알림 대신</h3><p>이 앱은 스스로 알림을 띄울 수 없습니다. 휴대폰 시계 앱에 매일 기도 시간 알람을 맞추고, 홈 화면 첫 자리에 앱 아이콘을 두세요.</p>'+
   '<h3>사람과 요일</h3><p>사람마다 "매일·매주·한 달"을 고릅니다. 매주 원의 분들은 그룹이 섞이도록 7일에 고르게 자동 배정됩니다. 특정 요일에 꼭 기도하고 싶은 분은 요일을 고정(📌)하세요.</p>'+
+  '<h3>연락처 가져오기</h3><p>"사람" 탭 → 📂 연락처 가져오기. 삼성 연락처 앱에서 VCF 파일로 내보낸 뒤 그 파일을 고르면, 이름·전화·생일·기념일·메모를 함께 가져옵니다. 생일과 기념일은 일주일 전부터 "오늘" 화면에 미리 보이고, 당일에는 축복 기도로 올라옵니다.</p>'+
   '<h3>기도제목 넣기</h3><p>어디서든 ＋ 버튼. 단톡방 기도제목은 복사한 뒤 "붙여넣기"를 누르세요. 새 제목은 3일간 "오늘 특별히"에 매일 올라오고, 긴급은 응답될 때까지 매일, 날짜가 있는 제목은 전날과 당일에 올라오고 다음 날 "결과 묻기"가 뜹니다.</p>'+
   '<h3>응답</h3><p>기도제목을 눌러 "응답됨"을 고르고 내용과 날짜를 적으세요. 다음 날 감사 기도에 올라오고 "응답" 탭에 연대기로 쌓입니다.</p>'+
   '<h3>말씀노트</h3><p>설교나 성경읽기에서 받은 적용을 적으면 1·3·7·14·30·90·180일 뒤에 "오늘"의 말씀 상기에 다시 올라옵니다. "고칠 것"은 자백 기도로 이어집니다.</p>'+
@@ -731,6 +767,7 @@ var ACT = {
     if(isNew){ p={id:uid(), created:today(), lastContact:""}; S.people.push(p); }
     var oldCircle=p.circle, oldGroup=p.groupId;
     p.name=name; p.phone=val("pPhone"); p.groupId=$("#pGroup").value; p.circle=radioVal("pCircle")||"weekly"; p.birthday=val("pBirth"); p.memo=val("pMemo");
+    p.anniversaries = Array.prototype.map.call(document.querySelectorAll("#annWrap .ann"), function(r){ return {label:r.querySelector(".annLabel").value.trim(), date:r.querySelector(".annDate").value.trim()}; }).filter(function(a){ return a.date; });
     if(p.circle==="weekly"){
       var dv=$("#pDay").value;
       if(dv==="auto"){ if(p.dayFixed || oldCircle!=="weekly" || oldGroup!==p.groupId || p.day==null){ p.dayFixed=false; p.day=null; } }
@@ -740,6 +777,8 @@ var ACT = {
     assignPerson(p); save(); closeSheet(); render();
     toast(p.circle==="weekly" ? p.name+"님 — "+DOW[p.day]+"요일에 기도합니다" : p.name+"님 — "+circleName(p.circle));
   },
+  addAnn:function(){ $("#annWrap").insertAdjacentHTML("beforeend", annRow()); },
+  delAnn:function(b){ b.closest(".ann").remove(); },
   delPerson:function(b){
     var p=person(b.dataset.id); if(!p || !confirm(p.name+"님과 기도제목을 모두 삭제할까요?")) return;
     S.people=S.people.filter(function(x){ return x!==p; }); S.items=S.items.filter(function(it){ return it.personId!==p.id; });
@@ -813,6 +852,7 @@ var ACT = {
   importContacts:function(b){
     var single = b && b.dataset && b.dataset.single==="1";
     var supported = ("contacts" in navigator) && navigator.contacts && navigator.contacts.select;
+    if(!single){ vcfIntro(); return; }
     openSheet("연락처에서 가져오기", '<div id="icStatus" class="banner">'+(supported?'휴대폰 연락처 창이 열립니다. 고른 뒤 "완료"를 누르세요…':'이 브라우저에서는 연락처 창을 열 수 없습니다.')+'</div>'+
       '<h3>다른 방법 — 붙여넣기</h3><div class="tiny muted">삼성 연락처 앱에서 사람을 열고 <b>공유 → "텍스트"</b>를 고른 뒤, 공유 창에서 <b>복사</b>를 누르고 아래에 붙여넣으세요. 여러 명을 한꺼번에 골라 공유해도 됩니다. "홍길동 010-1234-5678"처럼 한 줄에 한 사람씩 직접 적어도 됩니다.</div>'+
       '<textarea id="icPaste" style="margin-top:8px;min-height:110px" placeholder="홍길동 010-1234-5678&#10;김철수 010-9876-5432"></textarea>'+
@@ -839,6 +879,18 @@ var ACT = {
       st("연락처를 가져오지 못했습니다: "+esc((err&&(err.name+" "+(err.message||"")))||"알 수 없는 오류")+"<br>아래 붙여넣기를 써 주세요.");
     });
   },
+  pickVcf:function(){ $("#vcfIn").click(); },
+  vAll:function(b){ var on=b.dataset.v==="1", q=VCF.q.trim().toLowerCase(); VCF.rows.forEach(function(r,i){ if(!q || (r.name+" "+r.tel+" "+r.memo+" "+r.cats).toLowerCase().indexOf(q)>=0) VCF.sel[i]=on; }); VCF.g=$("#vGroup").value; VCF.c=radioVal("vCircle"); vcfSheet(); },
+  vAdd:function(){
+    var idx = Object.keys(VCF.sel).filter(function(k){ return VCF.sel[k]; }).map(Number); if(!idx.length) return toast("먼저 사람을 골라 주세요");
+    var g=$("#vGroup").value, c=radioVal("vCircle")||"weekly", nNew=0, nMerge=0;
+    idx.forEach(function(i){ var r=VCF.rows[i], ex=S.people.filter(function(p){ return p.name===r.name; })[0];
+      if(ex){ mergePerson(ex, r); nMerge++; }
+      else { var p={id:uid(), name:r.name, phone:r.tel, groupId:g, circle:c, day:null, dayFixed:false, birthday:r.birthday, anniversaries:r.anniversaries, memo:r.memo, created:today(), lastContact:""}; S.people.push(p); assignPerson(p); nNew++; }
+      VCF.done[i]=true; VCF.sel[i]=false; });
+    save(); render(); VCF.g=g; VCF.c=c; vcfSheet();
+    toast(nNew+"명을 넣었습니다"+(nMerge?" · "+nMerge+"명은 이미 있어 정보만 보탬":""));
+  },
   icPasteBtn:function(){ if(!navigator.clipboard || !navigator.clipboard.readText) return toast("입력칸을 길게 눌러 붙여넣기 하세요"); navigator.clipboard.readText().then(function(x){ var ta=$("#icPaste"); ta.value=(ta.value?ta.value+"\n":"")+x; }).catch(function(){ toast("입력칸을 길게 눌러 붙여넣기 하세요"); }); },
   icParse:function(){ var rows=parseContactsText($("#icPaste").value); if(!rows.length) return toast("이름을 찾지 못했습니다"); addContactRows(rows); },
   contacted:function(b){ var p=person(b.dataset.id); if(p){ p.lastContact=today(); save(); } },
@@ -858,7 +910,7 @@ var ACT = {
   },
   saveSettings:function(){
     var st=S.settings; st.theme=radioVal("sTheme")||st.theme; st.cap=Math.max(3, Number(val("sCap"))||10);
-    st.tpl={pray:val("tPray"), due:val("tDue"), answer:val("tAns")};
+    st.tpl={pray:val("tPray"), due:val("tDue"), answer:val("tAns"), bday:val("tBday")};
     var changed=false;
     document.querySelectorAll("[data-gname]").forEach(function(e){ var g=group(e.dataset.gname); if(g && e.value.trim()) g.name=e.value.trim(); });
     document.querySelectorAll("[data-gday]").forEach(function(e){ var g=group(e.dataset.gday); var v=e.value===""?null:Number(e.value); if(g && g.fixedDay!==v){ g.fixedDay=v; changed=true; } });
@@ -912,6 +964,111 @@ function parseContactsText(text){
     else if(!m && name && name.length<=20){ pending={name:name, tel:""}; rows.push(pending); }
   });
   return rows;
+}
+/* ---------- VCF(연락처 파일) 가져오기 ---------- */
+function vcfIntro(){
+  var h = '<div class="banner"><b>📂 VCF 파일로 한꺼번에</b> — 이름·전화·생일·기념일·메모까지 함께 가져옵니다. 파일은 이 휴대폰 안에서만 읽고, 어디에도 올리지 않습니다.</div>'+
+    '<div class="small"><b>삼성 휴대폰에서 VCF 만들기</b><ol style="margin:6px 0 0;padding-left:20px"><li>연락처 앱 → 왼쪽 위 ≡ (또는 ⋮)</li><li>연락처 관리 → 연락처 가져오기/내보내기</li><li><b>내보내기</b> → 저장 위치 "내장 메모리" → 내보내기</li><li>Download(다운로드) 폴더 등에 .vcf 파일이 생깁니다</li></ol></div>'+
+    '<div class="actions"><button class="btn primary block" data-act="pickVcf">📂 VCF 파일 고르기</button></div>'+
+    '<h3>다른 방법</h3><div class="actions"><button class="btn sm" data-act="importContacts" data-single="1">📇 연락처 창에서 한 명 고르기</button></div>'+
+    '<div class="tiny muted" style="margin-top:10px">또는 "홍길동 010-1234-5678"처럼 한 줄에 한 사람씩 적거나 붙여넣기:</div><textarea id="icPaste" style="margin-top:6px;min-height:90px" placeholder="홍길동 010-1234-5678"></textarea>'+
+    '<div class="actions"><button class="btn sm" data-act="icPasteBtn">📋 붙여넣기</button><button class="btn sm primary" data-act="icParse">이 내용으로 넣기</button></div>';
+  openSheet("연락처 가져오기", h);
+}
+function qpDecode(str, charset){
+  var bytes = [], i = 0;
+  while(i < str.length){
+    var c = str[i];
+    if(c==="=" && /^[0-9A-Fa-f]{2}$/.test(str.substr(i+1,2))){ bytes.push(parseInt(str.substr(i+1,2),16)); i+=3; }
+    else { var code=str.charCodeAt(i); if(code<128) bytes.push(code); else { var enc=unescape(encodeURIComponent(c)); for(var k=0;k<enc.length;k++) bytes.push(enc.charCodeAt(k)); } i++; }
+  }
+  try{ return new TextDecoder((charset||"utf-8").toLowerCase()).decode(new Uint8Array(bytes)); }catch(e){ return new TextDecoder("utf-8").decode(new Uint8Array(bytes)); }
+}
+function vUnescape(v){ return v.replace(/\\n/gi,"\n").replace(/\\([,;\\])/g,"$1"); }
+function parseVcf(text){
+  text = String(text||"").replace(/^﻿/,"").replace(/\r\n?/g,"\n");
+  /* 줄 이어붙이기: quoted-printable의 끝 '=' 과 공백으로 시작하는 연속 줄 */
+  var raw = text.split("\n"), lines = [];
+  for(var i=0;i<raw.length;i++){
+    var l = raw[i];
+    if(lines.length && /^[ \t]/.test(l)){ lines[lines.length-1] += l.slice(1); continue; }
+    while(/ENCODING=QUOTED-PRINTABLE/i.test(l.split(":")[0]) && /=$/.test(l) && i+1<raw.length){ l = l.slice(0,-1) + raw[++i]; }
+    lines.push(l);
+  }
+  var cards = [], cur = null;
+  lines.forEach(function(line){
+    if(/^BEGIN:VCARD/i.test(line)){ cur = {fn:"", n:"", tels:[], bday:"", anns:[], note:"", org:"", title:"", cats:""}; return; }
+    if(/^END:VCARD/i.test(line)){ if(cur) cards.push(cur); cur=null; return; }
+    if(!cur) return;
+    var ci = line.indexOf(":"); if(ci<0) return;
+    var head = line.slice(0,ci), value = line.slice(ci+1);
+    var parts = head.split(";"), name = parts[0].replace(/^item\d+\./i,"").toUpperCase(), params = parts.slice(1).join(";").toUpperCase();
+    if(/QUOTED-PRINTABLE/.test(params)){ var cs=/CHARSET=([\w-]+)/.exec(params); value = qpDecode(value, cs&&cs[1]); }
+    value = vUnescape(value).trim();
+    if(name==="FN") cur.fn = value;
+    else if(name==="N") cur.n = value.split(";").slice(0,2).reverse().join("").trim() || value.replace(/;/g," ").trim();
+    else if(name==="TEL") cur.tels.push({v:value, cell:/CELL|MOBILE/.test(params)});
+    else if(name==="BDAY") cur.bday = value;
+    else if(name==="ANNIVERSARY" || name==="X-ANNIVERSARY") cur.anns.push({label:"결혼기념일", date:value});
+    else if(name==="X-ABDATE") cur.anns.push({label:"기념일", date:value});
+    else if(name==="NOTE") cur.note = cur.note ? cur.note+"\n"+value : value;
+    else if(name==="ORG") cur.org = value.replace(/;+/g," ").trim();
+    else if(name==="TITLE") cur.title = value;
+    else if(name==="CATEGORIES") cur.cats = value;
+    else if(name==="X-ANDROID-CUSTOM" && /contact_event/.test(value)){
+      var f = value.split(";"), date = f[1], type = f[2], lab = f[3];
+      if(lab && /^(=[0-9A-Fa-f]{2})+$/.test(lab)) lab = qpDecode(lab, "utf-8");
+      if(type==="3" && !cur.bday) cur.bday = date;
+      else cur.anns.push({label: type==="1" ? "결혼기념일" : (lab || "기념일"), date: date});
+    }
+  });
+  return cards.map(function(c){
+    var cell = c.tels.filter(function(t){ return t.cell; }).map(function(t){ return t.v; });
+    var b = normDate(c.bday);
+    return {name:(c.fn||c.n||"").trim(), tel:pickMobile(cell.concat(c.tels.map(function(t){ return t.v; }))),
+      birthday: b ? (b.y ? b.y+"-"+b.md : b.md) : "", anniversaries: c.anns.map(function(a){ var d=normDate(a.date); return d ? {label:a.label, date:(d.y?d.y+"-"+d.md:d.md)} : null; }).filter(Boolean),
+      memo: [c.org, c.title, c.note].filter(Boolean).join("\n"), cats: c.cats};
+  }).filter(function(r){ return r.name; });
+}
+var VCF = {rows:[], sel:{}, done:{}, q:""};
+function vcfSheet(){
+  var q = VCF.q.trim().toLowerCase();
+  var vis = VCF.rows.map(function(r,i){ return i; }).filter(function(i){ var r=VCF.rows[i]; return !q || (r.name+" "+r.tel+" "+r.memo+" "+r.cats).toLowerCase().indexOf(q)>=0; });
+  var nsel = Object.keys(VCF.sel).filter(function(k){ return VCF.sel[k]; }).length;
+  var listHtml = vis.slice(0,400).map(function(i){ var r=VCF.rows[i], ex=S.people.some(function(p){ return p.name===r.name; });
+    return '<label class="li" style="cursor:pointer;align-items:center"><input type="checkbox" class="vsel" data-i="'+i+'" '+(VCF.sel[i]?"checked":"")+' style="width:22px;height:22px;accent-color:var(--accent);flex:none"><div style="flex:1;min-width:0"><div><b>'+esc(r.name)+'</b> <span class="tiny muted">'+esc(r.tel)+'</span>'+(VCF.done[i]?' <span class="chip good">넣음</span>':(ex?' <span class="chip">이미 있음</span>':''))+'</div>'+
+      '<div class="tiny muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(r.birthday?'🎂 '+esc(r.birthday)+' ':'')+r.anniversaries.map(function(a){ return '💐 '+esc(a.label)+' '+esc(a.date)+' '; }).join("")+(r.cats?'· '+esc(r.cats)+' ':'')+(r.memo?'· '+esc(r.memo.replace(/\n/g," ").slice(0,40)):'')+'</div></div></label>'; }).join("");
+  var h = '<div class="tiny muted">파일에서 '+VCF.rows.length+'명을 읽었습니다. 기도할 분들을 골라 그룹·횟수를 정하고 넣으세요. 그룹마다 나누어 여러 번 넣으면 편합니다.</div>'+
+    '<input type="text" id="vQ" value="'+esc(VCF.q)+'" placeholder="🔍 이름·번호·메모로 찾기" style="margin-top:8px">'+
+    '<div class="row" style="margin-top:6px"><button class="btn sm" data-act="vAll" data-v="1">보이는 사람 모두 선택</button><button class="btn sm ghost" data-act="vAll" data-v="0">선택 해제</button><span class="sp"></span><span class="small"><b id="vCount">'+nsel+'</b>명 선택</span></div>'+
+    '<div class="list" id="vList" style="margin-top:6px">'+(listHtml||'<div class="empty">찾는 사람이 없습니다.</div>')+'</div>'+(vis.length>400?'<div class="tiny muted">앞의 400명만 보입니다. 검색으로 좁혀 주세요.</div>':'')+
+    '<div style="position:sticky;bottom:-20px;background:var(--card);padding:10px 0 4px;border-top:1px solid var(--line);margin-top:8px">'+
+    '<div class="row"><select id="vGroup" style="flex:1">'+groupOptions(VCF.g||"")+'</select></div><div style="margin-top:8px">'+radio("vCircle", [["daily","매일"],["weekly","매주"],["monthly","한 달"]], VCF.c||"weekly")+'</div>'+
+    '<div class="actions" style="margin-top:8px"><button class="btn primary block" data-act="vAdd">선택한 사람 넣기</button></div></div>';
+  var keepScroll = $("#ov .sheet") ? $("#ov .sheet").scrollTop : 0;
+  openSheet("연락처 파일 ("+VCF.rows.length+"명)", h, function(){
+    $("#ov .sheet").scrollTop = keepScroll;
+    var qi = $("#vQ"), timer=null;
+    qi.addEventListener("input", function(){ clearTimeout(timer); timer=setTimeout(function(){ VCF.q=qi.value; VCF.g=$("#vGroup").value; VCF.c=radioVal("vCircle"); vcfSheet(); var n=$("#vQ"); n.focus(); n.setSelectionRange(n.value.length,n.value.length); }, 350); });
+    $("#vList").addEventListener("change", function(e){ var c=e.target.closest(".vsel"); if(!c) return; VCF.sel[c.dataset.i]=c.checked; $("#vCount").textContent=Object.keys(VCF.sel).filter(function(k){ return VCF.sel[k]; }).length; });
+  });
+}
+$("#vcfIn").addEventListener("change", function(e){
+  var f = e.target.files[0]; if(!f) return; var r = new FileReader();
+  r.onload = function(){
+    var rows = []; try{ rows = parseVcf(r.result); }catch(err){ toast("파일을 읽지 못했습니다: "+err.message); return; }
+    if(!rows.length){ toast("연락처를 찾지 못했습니다. .vcf 파일이 맞는지 확인해 주세요"); return; }
+    rows.sort(function(a,b){ return a.name.localeCompare(b.name, "ko"); });
+    VCF = {rows:rows, sel:{}, done:{}, q:""}; vcfSheet();
+  };
+  r.readAsText(f); e.target.value = "";
+});
+function mergePerson(ex, r){
+  if(!ex.phone && r.tel) ex.phone = r.tel;
+  if(!ex.birthday && r.birthday) ex.birthday = r.birthday;
+  ex.anniversaries = ex.anniversaries || [];
+  (r.anniversaries||[]).forEach(function(a){ if(!ex.anniversaries.some(function(x){ return x.date===a.date; })) ex.anniversaries.push(a); });
+  if(r.memo && (ex.memo||"").indexOf(r.memo)<0) ex.memo = ex.memo ? ex.memo+"\n"+r.memo : r.memo;
 }
 function addContactRows(rows){
   var added = [], filled = 0;
