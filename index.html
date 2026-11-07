@@ -144,12 +144,26 @@ label.f{display:block; font-size:13.5px; color:var(--muted); margin:12px 0 4px; 
 .vini button{min-width:30px; height:30px; border:1px solid var(--line); background:var(--bg); border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; color:var(--text); padding:0 4px;}
 .vini button:disabled{opacity:.25;}
 .vrow{content-visibility:auto; contain-intrinsic-size:auto 58px; scroll-margin-top:130px;}
+@media (min-width: 900px){
+  .wrap{max-width:1180px; padding:0 28px;}
+  html,body{font-size:17px;}
+  .fab{right:max(24px, calc(50% - 570px));}
+  .ov{align-items:center;}
+  .sheet{max-width:760px; border-radius:18px; max-height:88vh;}
+  .pgrid{display:grid; grid-template-columns:repeat(auto-fill, minmax(330px, 1fr)); gap:0 12px;}
+  .daygrid{display:grid; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr)); gap:0 12px; align-items:start;}
+  .ngrid{display:grid; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr)); gap:0 12px; align-items:start;}
+  .todaycols{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); gap:0 18px; align-items:start;}
+  .todaycols .colL{position:sticky; top:62px;}
+  .step .sh{padding:16px 18px;} .step .sb{padding:0 18px 18px;}
+}
 .linkbtn{background:none; border:0; color:var(--accent); font-weight:700; cursor:pointer; padding:0; font-size:inherit;}
 </style>
 </head>
 <body>
 <header class="top"><div class="wrap">
   <div class="brand" id="brand">쉬지 않는 기도</div>
+  <button class="iconbtn" id="syncBtn" data-act="syncTap" aria-label="동기화" style="display:none;font-size:15px;width:auto;padding:0 8px;gap:4px"></button>
   <button class="iconbtn" data-act="settings" aria-label="설정">⚙︎</button>
 </div></header>
 <main class="wrap" id="main"></main>
@@ -165,7 +179,7 @@ label.f{display:block; font-size:13.5px; color:var(--muted); margin:12px 0 4px; 
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-06-6";
+var APP_VERSION = "2026-11-07-1";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -214,12 +228,82 @@ function load(){
   S.settings.tpl = Object.assign({}, d.settings.tpl, S.settings.tpl||{});
   ["people","items","notes","groups"].forEach(function(k){ if(!Array.isArray(S[k])) S[k]=[]; });
   if(!S.logs) S.logs = {};
+  if(!S.tomb) S.tomb = {};
+  if(!S.settings.sync) S.settings.sync = {};
+  SNAP = snapshot(true);
+}
+/* ---- 고친 시각 기록 (기기 간 합치기용) ----
+   저장할 때마다 이전 저장과 비교해 바뀐 기록에 mt(고친 시각)를 찍고, 사라진 기록은 tomb(지운 기록)에 남긴다. */
+var KINDS = ["groups","people","items","notes"];
+var LOCAL_SETTINGS = ["theme","short","lastBackup","sync","started"];
+var SNAP = null;
+function recJson(r){ var o={}; Object.keys(r).forEach(function(k){ if(k!=="mt") o[k]=r[k]; }); return JSON.stringify(o); }
+function sharedSettings(st){ return {cap:st.cap, tpl:st.tpl}; }
+function snapshot(fillMissing){
+  var now = Date.now(), cur = {};
+  KINDS.forEach(function(kind){ S[kind].forEach(function(r){ if(fillMissing && !r.mt) r.mt = now; cur[kind+":"+r.id] = recJson(r); }); });
+  Object.keys(S.logs).forEach(function(d){ var L=S.logs[d]; if(fillMissing && !L.mt) L.mt = now; cur["log:"+d] = recJson(L); });
+  if(fillMissing && !S.settings.smt) S.settings.smt = now;
+  cur["settings"] = JSON.stringify(sharedSettings(S.settings));
+  return cur;
+}
+function stamp(){
+  var now = Date.now(), cur = {};
+  KINDS.forEach(function(kind){ S[kind].forEach(function(r){ var k=kind+":"+r.id, j=recJson(r); cur[k]=j; if(!r.mt || (SNAP && SNAP[k]!==j)) r.mt=now; }); });
+  Object.keys(S.logs).forEach(function(d){ var L=S.logs[d], k="log:"+d, j=recJson(L); cur[k]=j; if(!L.mt || (SNAP && SNAP[k]!==j)) L.mt=now; });
+  var sj = JSON.stringify(sharedSettings(S.settings)); cur["settings"]=sj; if(SNAP && SNAP["settings"]!==sj) S.settings.smt=now;
+  if(SNAP) Object.keys(SNAP).forEach(function(k){ if(!(k in cur) && k!=="settings") S.tomb[k]=now; });
+  var cutoff = now - 200*864e5; Object.keys(S.tomb).forEach(function(k){ if(S.tomb[k]<cutoff) delete S.tomb[k]; });
+  var changed = !SNAP || Object.keys(cur).some(function(k){ return SNAP[k]!==cur[k]; }) || Object.keys(SNAP).length!==Object.keys(cur).length;
+  SNAP = cur;
+  return changed;
 }
 var memOnly = false;
-function save(){
+function save(opts){
+  var changed = stamp();
   try{ localStorage.setItem(KEY, JSON.stringify(S)); }
   catch(e){ if(!memOnly){ memOnly=true; toast("이 화면에서는 저장이 안 되어 임시로만 기억합니다"); } }
+  if(changed && !(opts && opts.noSync)) Sync.soon();
 }
+/* ---- 합치기: 다른 기기(또는 백업)의 기록을 지금 기록과 합친다 ---- */
+function uniq(a){ var o=[], m={}; (a||[]).forEach(function(x){ if(!m[x]){ m[x]=1; o.push(x); } }); return o; }
+function mergeInto(R){
+  var T = {}, k, stats = {added:0, updated:0, removed:0};
+  [S.tomb||{}, R.tomb||{}].forEach(function(src){ for(k in src) T[k] = Math.max(T[k]||0, src[k]); });
+  KINDS.forEach(function(kind){
+    var m = {}, order = [];
+    S[kind].forEach(function(r){ m[r.id]=r; order.push(r.id); });
+    (R[kind]||[]).forEach(function(r){
+      if(!r || !r.id) return;
+      var l = m[r.id];
+      if(!l){ m[r.id]=r; order.push(r.id); stats.added++; }
+      else if((r.mt||0) > (l.mt||0)){ if(kind==="items") r.prayed = uniq((r.prayed||[]).concat(l.prayed||[])).sort(); m[r.id]=r; stats.updated++; }
+      else if(kind==="items"){ l.prayed = uniq((l.prayed||[]).concat(r.prayed||[])).sort(); }
+    });
+    S[kind] = order.map(function(id){ return m[id]; }).filter(function(r){ var t=T[kind+":"+r.id]; return !(t && t >= (r.mt||0)); });
+  });
+  var RL = R.logs || {};
+  Object.keys(RL).forEach(function(d){
+    var a = S.logs[d], b = RL[d]; if(!b) return;
+    if(!a){ S.logs[d] = b; return; }
+    var newer = (b.mt||0) > (a.mt||0) ? b : a, older = newer===a ? b : a;
+    var L = JSON.parse(JSON.stringify(newer));
+    L.prayed = uniq((a.prayed||[]).concat(b.prayed||[]));
+    L.steps = Object.assign({}, older.steps||{}, newer.steps||{});
+    L.done = !!(a.done || b.done);
+    ["praiseMemo","confess"].forEach(function(f){ if(!L[f] && older[f]) L[f]=older[f]; });
+    L.thanks = (newer.thanks||[]).map(function(x,i){ return x || (older.thanks||[])[i] || ""; });
+    (older.thanks||[]).slice((newer.thanks||[]).length).forEach(function(x){ L.thanks.push(x); });
+    L.mt = Math.max(a.mt||0, b.mt||0);
+    S.logs[d] = L;
+  });
+  if(R.settings && (R.settings.smt||0) > (S.settings.smt||0)){ S.settings.cap = R.settings.cap || S.settings.cap; S.settings.tpl = Object.assign({}, S.settings.tpl, R.settings.tpl||{}); S.settings.smt = R.settings.smt; }
+  S.tomb = T;
+  SNAP = snapshot(false);
+  try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){}
+  return stats;
+}
+function sharedState(){ var st={}; Object.keys(S.settings).forEach(function(k){ if(LOCAL_SETTINGS.indexOf(k)<0) st[k]=S.settings[k]; }); return {v:1, app:"swgido", groups:S.groups, people:S.people, items:S.items, notes:S.notes, logs:S.logs, tomb:S.tomb, settings:st}; }
 function log(d){ if(!S.logs[d]) S.logs[d] = {steps:{}, thanks:["","",""], prayed:[], praiseMemo:"", confess:""}; var L=S.logs[d]; if(!L.steps) L.steps={}; if(!L.thanks) L.thanks=["","",""]; if(!L.prayed) L.prayed=[]; return L; }
 
 /* ============ 조회 ============ */
@@ -389,21 +473,28 @@ function renderToday(){
     '<div class="sub">기도하기를 쉬는 죄를 범치 아니하고 (삼상 12:23) · 이번 주 '+wd.n+'/7일</div><div class="weekdots">'+wd.cells+'</div></div>';
   if(!S.people.length && !S.items.length) h += welcomeCard();
   var steps = short ? STEPS.filter(function(s){ return s[0]==="praise"||s[0]==="thanks"||s[0]==="intercede"; }) : STEPS;
-  var cur = null; steps.forEach(function(s){ if(!cur && !L.steps[s[0]]) cur=s[0]; });
+  var wide = isWide();
+  var cur = null; steps.forEach(function(s){ if(!cur && !L.steps[s[0]] && !(wide && s[0]==="intercede")) cur=s[0]; });
   var open = UI.open===undefined ? cur : (UI.open===null ? cur : UI.open);
-  var plan = todayPlan(t);
+  var plan = todayPlan(t), left = "", right = "";
   steps.forEach(function(s, i){
     var k=s[0], body=STEP_BODY[k](t,L,plan,short), sum=STEP_SUM[k](t,L,plan,short);
-    h += '<div class="step '+(L.steps[k]?"done ":"")+(open===k?"open":"")+'" id="step-'+k+'"><div class="sh" data-act="openStep" data-k="'+k+'">'+
+    var isOpen = open===k || (wide && k==="intercede");
+    var card = '<div class="step '+(L.steps[k]?"done ":"")+(isOpen?"open":"")+'" id="step-'+k+'"><div class="sh" data-act="openStep" data-k="'+k+'">'+
       '<span class="num">'+(L.steps[k]?"✓":(i+1))+'</span><span class="st">'+s[1]+'</span><span class="ss">'+sum+'</span></div>'+
       '<div class="sb">'+body+'<div class="actions"><button class="btn '+(L.steps[k]?"":"primary")+' block" data-act="stepDone" data-k="'+k+'">'+(L.steps[k]?"다시 열어 두기":(i===steps.length-1?"마침 ✓":"마침 · 다음 ›"))+'</button></div></div></div>';
+    if(wide && k==="intercede") right += card; else left += card;
   });
+  h += wide ? '<div class="todaycols"><div class="colL">'+left+'</div><div class="colR">'+right+'</div></div>' : left;
   h += '<div class="finish">' + (L.done ? '<div class="banner" style="text-align:center">오늘 기도를 마쳤습니다 ✓ · 이번 주 '+wd.n+'/7일</div>'
       : '<button class="btn primary block" data-act="finishDay">🙏 오늘 기도 마침</button>') + '</div>';
   var lb = S.settings.lastBackup;
   if((S.people.length||S.items.length) && (!lb || diff(lb,t)>=7)) h += '<div class="banner warn">휴대폰을 잃어버리거나 바꿀 때를 대비해 일주일에 한 번 백업해 두세요. <button class="linkbtn" data-act="backup">지금 백업 ›</button></div>';
   return h + '<div style="height:24px"></div>';
 }
+function isWide(){ return window.matchMedia && window.matchMedia("(min-width: 900px)").matches; }
+var wasWide = null;
+window.addEventListener("resize", function(){ var w=isWide(); if(wasWide!==null && w!==wasWide && !document.getElementById("ov")){ var a=document.activeElement; if(!(a && /INPUT|TEXTAREA/.test(a.tagName))) render(); } wasWide=w; });
 function welcomeCard(){
   return '<div class="card"><b style="font-size:17px">처음 오셨군요</b><p class="small muted" style="margin:6px 0 10px">먼저 <b>매일</b> 기도할 분들의 이름을 쉼표로 적어 주세요. 다른 분들은 아래 ＋ 버튼이나 "사람" 탭에서 넣으시면, 요일에 고르게 나누어 드립니다.</p>'+
     '<input type="text" id="welcomeNames" placeholder="예: 아내, 큰아들, 작은아들, 장모님"><div class="actions"><button class="btn primary" data-act="welcomeSave">매일 기도 대상으로 넣기</button></div></div>';
@@ -450,13 +541,13 @@ var STEP_BODY = {
   intercede:function(t,L,p,short){
     var h = "", up = upcomingEvents(t, 7);
     if(up.length) h += '<div class="banner"><b>다가오는 기념일</b> — 미리 기도하고, 축하나 선물을 준비해 보세요'+up.map(function(u){ return '<div class="small" style="margin-top:4px;cursor:pointer" data-act="openPerson" data-id="'+u.p.id+'">🎁 '+evText(u)+'</div>'; }).join("")+'</div>';
-    if(p.daily.length){ h += '<div class="secttl">매일</div>' + p.daily.map(function(x){ return pcard(x, L, p.sp[x.id]); }).join(""); }
-    if(p.special.length){ h += '<div class="secttl">오늘 특별히 · 새 제목 · 긴급 · 날짜</div>' + p.special.map(function(e){ return e.pid ? pcard(person(e.pid), L, e) : inboxCard(e); }).join(""); }
+    if(p.daily.length){ h += '<div class="secttl">매일</div>' + '<div class="pgrid">'+p.daily.map(function(x){ return pcard(x, L, p.sp[x.id]); }).join("")+'</div>'; }
+    if(p.special.length){ h += '<div class="secttl">오늘 특별히 · 새 제목 · 긴급 · 날짜</div>' + '<div class="pgrid">'+p.special.map(function(e){ return e.pid ? pcard(person(e.pid), L, e) : inboxCard(e); }).join("")+'</div>'; }
     var cap = S.settings.cap||10;
     h += '<div class="secttl">오늘 순서 · '+DOW[dow(t)]+'요일 '+p.weekly.length+'명</div>';
     if(!p.weekly.length) h += '<div class="empty">'+(weeklyPeople().length?'오늘 순서인 분이 없습니다.':'"사람" 탭에서 매주 기도할 분들을 넣으면 요일마다 고르게 나뉘어 여기에 올라옵니다.')+'</div>';
     else if(short) h += '<div class="small muted" style="margin-bottom:6px">이름을 부르며 기도하고 눌러 표시하세요</div><div class="namechips">'+p.weekly.map(function(x){ return '<button class="'+(L.prayed.indexOf(x.id)>=0?"on":"")+'" data-act="pray" data-id="'+x.id+'">'+esc(x.name)+'</button>'; }).join("")+'</div>';
-    else h += p.weekly.map(function(x){ return pcard(x, L, null); }).join("");
+    else h += '<div class="pgrid">'+p.weekly.map(function(x){ return pcard(x, L, null); }).join("")+'</div>';
     if(p.weekly.length > cap) h += '<div class="banner warn">오늘 순서가 '+p.weekly.length+'명으로 하루 상한('+cap+'명)을 넘습니다. "사람" 탭에서 몇 분을 "한 달" 원으로 옮겨 보세요.</div>';
     if(p.monthly.length) h += '<div class="secttl">한 달 순서 · 이름 불러 기도</div><div class="namechips">'+p.monthly.map(function(x){ return '<button class="'+(L.prayed.indexOf(x.id)>=0?"on":"")+'" data-act="pray" data-id="'+x.id+'">'+esc(x.name)+'</button>'; }).join("")+'</div>';
     return h;
@@ -548,9 +639,9 @@ function renderWords(){
     (n.status==="active"&&n.apply?'<div class="tiny muted" style="margin-top:4px">다음에 다시 봄: '+(n.next<=t?'<b style="color:var(--accent)">오늘</b>':fmtDate(n.next))+' · 실천 '+((n.log||[]).filter(function(x){return x.r==="yes";}).length)+'번'+(n.pick===weekStart(t)?' · <b style="color:var(--accent)">이번 주 붙잡을 것</b>':'')+'</div>':'')+'</div>'; };
   var h = '<h2>말씀노트</h2><div class="small muted">설교·성경읽기·암송·QT에서 받은 적용과 결심. 적어 두면 정해진 날 "오늘" 화면에 다시 올라옵니다.</div>'+
     '<div class="actions"><button class="btn primary" data-act="newNote">＋ 적용 적기</button></div>';
-  h += '<h3>진행 중 '+act.length+'</h3>' + (act.length?act.map(card).join(""):'<div class="empty">아직 없습니다.</div>');
-  if(fruit.length) h += '<h3>열매 (습관이 됨) '+fruit.length+'</h3>' + fruit.map(card).join("");
-  if(arch.length) h += '<h3>보관 '+arch.length+'</h3>' + arch.map(card).join("");
+  h += '<h3>진행 중 '+act.length+'</h3>' + (act.length?'<div class="ngrid">'+act.map(card).join("")+'</div>':'<div class="empty">아직 없습니다.</div>');
+  if(fruit.length) h += '<h3>열매 (습관이 됨) '+fruit.length+'</h3>' + '<div class="ngrid">'+fruit.map(card).join("")+'</div>';
+  if(arch.length) h += '<h3>보관 '+arch.length+'</h3>' + '<div class="ngrid">'+arch.map(card).join("")+'</div>';
   return h + '<div style="height:24px"></div>';
 }
 
@@ -587,7 +678,7 @@ function openSheet(title, html, mount){
   document.body.appendChild(ov); document.body.style.overflow="hidden";
   if(mount) mount(ov);
 }
-function closeSheet(){ var o=$("#ov"); if(o){ o.remove(); document.body.style.overflow=""; } }
+function closeSheet(){ var o=$("#ov"); if(o){ o.remove(); document.body.style.overflow=""; } if(window.Sync) setTimeout(Sync.closeHook, 50); }
 function val(id){ var e=document.getElementById(id); return e ? e.value.trim() : ""; }
 function radio(name, opts, cur){ return '<div class="radio" data-radio="'+name+'">'+opts.map(function(o){ return '<button type="button" data-v="'+esc(o[0])+'" class="'+(String(cur)===String(o[0])?"on":"")+'">'+esc(o[1])+'</button>'; }).join("")+'</div>'; }
 function radioVal(name){ var b=document.querySelector('[data-radio="'+name+'"] button.on'); return b ? b.dataset.v : ""; }
@@ -714,8 +805,10 @@ function settingsSheet(){
     '<div class="actions"><button class="btn sm" data-act="addGroup">＋ 그룹 추가</button></div>'+
     '<h3>메시지 문구</h3><label class="f">기도 후 ({이름} 자리에 이름이 들어감)</label><input type="text" id="tPray" value="'+esc(st.tpl.pray)+'"><label class="f">날짜 다음 날 결과 묻기</label><input type="text" id="tDue" value="'+esc(st.tpl.due)+'"><label class="f">응답 후 함께 감사</label><input type="text" id="tAns" value="'+esc(st.tpl.answer)+'"><label class="f">생일·기념일 축하</label><input type="text" id="tBday" value="'+esc(st.tpl.bday)+'">'+
     '<div class="actions"><button class="btn primary block" data-act="saveSettings">설정 저장</button></div>'+
+    syncSettingsHtml()+
     '<h3>백업</h3><div class="tiny muted">모든 기록은 이 휴대폰 안에만 있습니다. 백업 파일을 카카오톡 "나와의 채팅"이나 이메일·구글 드라이브로 보내 두세요. 마지막 백업: '+(st.lastBackup?fmtDate(st.lastBackup):"없음")+'</div>'+
-    '<div class="actions"><button class="btn" data-act="backup">📤 백업 보내기</button><button class="btn" data-act="restore">📥 백업 불러오기</button></div>'+
+    '<div class="actions"><button class="btn" data-act="backup">📤 백업 보내기</button><button class="btn" data-act="restore" data-mode="merge">📥 백업 합치기</button></div>'+
+    '<div class="tiny muted" style="margin-top:6px">"합치기"는 지금 기록을 지우지 않고, 백업에만 있는 것과 더 최근에 고친 것을 더합니다. 다른 기기의 백업을 받아 맞출 때 쓰세요. <button class="linkbtn" data-act="restore" data-mode="replace">통째로 바꾸기</button></div>'+
     '<h3>도움말</h3><div class="actions"><button class="btn" data-act="help">📘 사용설명서</button><button class="btn" data-act="checkUpdate">🔄 새 버전 확인</button></div>'+
     '<div class="tiny faint" style="margin-top:14px">쉬지 않는 기도 · build '+APP_VERSION+'</div>';
   openSheet("설정", h);
@@ -731,6 +824,7 @@ function helpSheet(){
   '<h3>응답</h3><p>기도제목을 눌러 "응답됨"을 고르고 내용과 날짜를 적으세요. 다음 날 감사 기도에 올라오고 "응답" 탭에 연대기로 쌓입니다.</p>'+
   '<h3>말씀노트</h3><p>설교나 성경읽기에서 받은 적용을 적으면 1·3·7·14·30·90·180일 뒤에 "오늘"의 말씀 상기에 다시 올라옵니다. "고칠 것"은 자백 기도로 이어집니다.</p>'+
   '<h3>연락</h3><p>📞 바로 전화, 💬 문구를 고쳐 문자·카카오톡으로 보냅니다. 연락하면 최근 연락일이 기록됩니다.</p>'+
+  '<h3>폰과 탭 함께 쓰기</h3><p>⚙︎ → "기기 간 동기화"를 켜면 본인 구글 드라이브를 거쳐 기기끼리 기록이 맞춰집니다. 올리기 전에 비밀 문구로 암호화하므로 드라이브에서 열어 봐도 내용을 알 수 없습니다. 위의 ☁️ 표시가 "탭"이면 한 번 눌러 주세요(구글 연결은 한 시간쯤 유지됩니다). 인터넷이 없을 때 적은 것도 나중에 연결되면 합쳐집니다.</p>'+
   '<h3>백업</h3><p>모든 기록은 휴대폰 안에만 저장되어 다른 사람이 볼 수 없습니다. 대신 휴대폰을 바꾸면 사라지므로 ⚙︎ → 백업 보내기로 일주일에 한 번 보관해 두세요.</p></div>';
   openSheet("사용설명서", h);
 }
@@ -742,7 +836,7 @@ var ACT = {
   settings:settingsSheet, help:helpSheet,
   quickAdd:function(b){ quickSheet(b.dataset.pid, b.dataset.kind); },
   setShort:function(b){ S.settings.short = b.dataset.v==="1"; UI.open=null; save(); render(); },
-  openStep:function(b){ var k=b.dataset.k, cur=$("#step-"+k); UI.open = cur.classList.contains("open") ? "__none" : k; render(); },
+  openStep:function(b){ var k=b.dataset.k, cur=$("#step-"+k); if(isWide() && k==="intercede") return; UI.open = cur.classList.contains("open") ? "__none" : k; render(); },
   stepDone:function(b){
     var t=today(), L=log(t), k=b.dataset.k;
     if(L.steps[k]){ delete L.steps[k]; UI.open=k; save(); render(); return; }
@@ -925,8 +1019,28 @@ var ACT = {
   },
   addGroup:function(){ var n=prompt("새 그룹 이름"); if(!n||!n.trim()) return; S.groups.push({id:uid(), name:n.trim(), color:GROUP_COLORS[S.groups.length%GROUP_COLORS.length], fixedDay:null}); save(); settingsSheet(); },
   delGroup:function(b){ var g=group(b.dataset.id); if(!g || !confirm('"'+g.name+'" 그룹을 지울까요? (사람들은 "그룹 없음"으로 남습니다)')) return; S.groups=S.groups.filter(function(x){ return x!==g; }); S.people.forEach(function(p){ if(p.groupId===g.id) p.groupId=""; }); save(); settingsSheet(); },
+  syncTap:function(){ var c=Sync.cfg(); if(!c.pass) return settingsSheet(); if(Sync.isBusy()) return; if(c.status==="error" && /비밀 문구|클라이언트/.test(c.msg||"")) return settingsSheet(); Sync.connect(); },
+  syncOn:function(){
+    var c=Sync.cfg(), pass=val("syPass"), cid=$("#syClient") ? val("syClient") : "";
+    if(!GOOGLE_CLIENT_ID && !cid) return toast("구글 클라이언트 ID를 넣어 주세요");
+    if(pass.length < 6) return toast("비밀 문구는 6글자 이상으로 해 주세요");
+    if(cid && cid!==c.clientId){ c.clientId=cid; }
+    c.pass=pass; c.on=true; c.status=""; c.msg="";
+    try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){}
+    closeSheet(); Sync.paint();
+    Sync.prepare().then(function(){ Sync.connect(); }).catch(function(e){ toast(e.message); Sync.paint(); });
+  },
+  syncSave:function(){
+    var c=Sync.cfg(), pass=val("syPass"); if(pass.length<6) return toast("비밀 문구는 6글자 이상으로 해 주세요");
+    if(pass!==c.pass){ c.pass=pass; }
+    if($("#syClient") && val("syClient") && val("syClient")!==c.clientId){ c.clientId=val("syClient"); location.reload(); return; }
+    c.status=""; c.msg=""; try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){}
+    closeSheet(); if(c.token && c.tokenExp>Date.now()) Sync.run(); else Sync.connect();
+  },
+  syncOff:function(){ if(!confirm("동기화를 끌까요? (이 기기의 기록과 드라이브 파일은 그대로 남습니다)")) return; var c=Sync.cfg(); c.on=false; c.token=null; try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} closeSheet(); Sync.paint(); toast("동기화를 껐습니다"); },
   backup:function(){
-    var t=today(), data=JSON.stringify(S), name="쉬지않는기도_백업_"+t+".json";
+    var bk = sharedState(); bk.settings = Object.assign({}, S.settings); delete bk.settings.sync;
+    var t=today(), data=JSON.stringify(bk), name="쉬지않는기도_백업_"+t+".json";
     var file; try{ file=new File([data], name, {type:"application/json"}); }catch(e){}
     var done=function(){ S.settings.lastBackup=t; save(); render(); };
     if(file && navigator.canShare && navigator.canShare({files:[file]})){
@@ -935,7 +1049,7 @@ var ACT = {
       var a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([data],{type:"application/json"})); a.download=name; document.body.appendChild(a); a.click(); a.remove(); done(); toast("백업 파일을 내려받았습니다");
     }
   },
-  restore:function(){ $("#fileIn").click(); },
+  restore:function(b){ UI.restoreMode = (b && b.dataset.mode) || "merge"; $("#fileIn").click(); },
   checkUpdate:function(){
     if(!("serviceWorker" in navigator)) return location.reload();
     navigator.serviceWorker.getRegistration().then(function(r){ return r && r.update(); }).catch(function(){}).then(function(){
@@ -1139,13 +1253,162 @@ document.addEventListener("input", function(e){
 });
 $("#fileIn").addEventListener("change", function(e){
   var f=e.target.files[0]; if(!f) return; var r=new FileReader();
-  r.onload=function(){ try{ var d=JSON.parse(r.result); if(!d || !d.v || !Array.isArray(d.people)) throw 0;
-      if(!confirm("백업을 불러오면 지금 휴대폰의 기록이 백업 내용으로 바뀝니다. 계속할까요?")) return;
-      S=d; load2(); save(); closeSheet(); render(); toast("백업을 불러왔습니다");
-    }catch(err){ toast("백업 파일이 아닌 것 같아요"); } };
+  r.onload=function(){ var d; try{ d=JSON.parse(r.result); if(!d || !d.v || !Array.isArray(d.people)) throw 0; }catch(err){ toast("백업 파일이 아닌 것 같아요"); return; }
+      if(UI.restoreMode==="replace"){
+        if(!confirm("지금 이 기기의 기록을 모두 지우고 백업 내용으로 바꿉니다. 계속할까요?")) return;
+        var keep = {}; LOCAL_SETTINGS.forEach(function(k){ keep[k]=S.settings[k]; });
+        S=d; S.settings = Object.assign({}, S.settings||{}, keep); load2(); save(); closeSheet(); render(); toast("백업 내용으로 바꾸었습니다");
+      } else {
+        var n0 = S.people.length+S.items.length+S.notes.length;
+        mergeInto(d); render(); closeSheet(); Sync.soon();
+        var n1 = S.people.length+S.items.length+S.notes.length;
+        toast("합쳤습니다 · 새로 들어온 기록 "+Math.max(0,n1-n0)+"개");
+      }
+    };
   r.readAsText(f); e.target.value="";
 });
-function load2(){ var raw=JSON.stringify(S); try{ localStorage.setItem(KEY, raw); }catch(e){} load(); }
+function load2(){ SNAP=null; var raw=JSON.stringify(S); try{ localStorage.setItem(KEY, raw); }catch(e){} load(); }
+
+
+/* ============ 기기 간 동기화 (구글 드라이브 · 암호화) ============
+   - 본인 구글 드라이브에 이 앱이 만든 파일 하나만 씀 (권한: drive.file — 다른 파일은 볼 수 없음)
+   - 올리기 전에 비밀 문구로 AES-GCM 암호화 → 드라이브에는 알아볼 수 없는 글자만 저장
+   - 받아서 합치고(mergeInto) 다시 올림 → 두 기기에서 따로 고친 것이 모두 남음 */
+var GOOGLE_CLIENT_ID = "";
+var SYNC_FILE = "쉬지않는기도_동기화.json";
+var Sync = (function(){
+  var tokenClient = null, busy = false, timer = null, pendingRender = false;
+  function cfg(){ return S.settings.sync || (S.settings.sync = {}); }
+  function clientId(){ return cfg().clientId || GOOGLE_CLIENT_ID; }
+  function tok(){ var c=cfg(); return (c.token && c.tokenExp && Date.now() < c.tokenExp-60000) ? c.token : null; }
+  function setStatus(st, msg){ var c=cfg(); c.status=st; c.msg=msg||""; try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} paint(); }
+  function paint(){
+    var b = document.getElementById("syncBtn"); if(!b) return; var c=cfg();
+    if(!c.on){ b.style.display="none"; return; }
+    b.style.display="flex";
+    var need = !tok();
+    b.innerHTML = busy ? '☁️ <span class="tiny">…</span>' : (c.status==="error" ? '☁️<span class="tiny" style="color:var(--urgent)">!</span>' : (need ? '☁️<span class="tiny" style="color:var(--accent)">탭</span>' : '☁️<span class="tiny" style="color:var(--good)">✓</span>'));
+    b.title = c.msg || "";
+    var el = document.getElementById("syncStatus"); if(el) el.innerHTML = statusText();
+  }
+  function statusText(){ var c=cfg(); if(!c.on) return "꺼져 있음"; if(busy) return "동기화 중…";
+    var last = c.last ? new Date(c.last) : null, lt = last ? (last.getMonth()+1)+"/"+last.getDate()+" "+pad(last.getHours())+":"+pad(last.getMinutes()) : "아직 없음";
+    return (c.status==="error" ? '<span style="color:var(--urgent)">'+esc(c.msg)+'</span><br>' : '') + "마지막 동기화: "+lt + (tok() ? "" : ' · <span style="color:var(--accent)">위의 ☁️를 누르면 동기화</span>'); }
+  function loadGis(){
+    return new Promise(function(res, rej){
+      if(window.google && google.accounts && google.accounts.oauth2) return res();
+      var sc = document.createElement("script"); sc.src = "https://accounts.google.com/gsi/client"; sc.async = true;
+      sc.onload = function(){ res(); }; sc.onerror = function(){ rej(new Error("구글 로그인 도구를 불러오지 못했습니다 (인터넷 확인)")); };
+      document.head.appendChild(sc);
+    });
+  }
+  function prepare(){
+    if(!clientId()) return Promise.reject(new Error("구글 클라이언트 ID가 없습니다"));
+    return loadGis().then(function(){
+      if(tokenClient) return;
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: clientId(), scope: "https://www.googleapis.com/auth/drive.file",
+        callback: function(r){ if(r && r.access_token){ var c=cfg(); c.token=r.access_token; c.tokenExp=Date.now()+(Number(r.expires_in)||3600)*1000; c.granted=true; run(); } else setStatus("error", "구글 연결이 취소되었습니다"); },
+        error_callback: function(e){ setStatus("error", "구글 연결 창이 열리지 않았습니다 ("+(e&&e.type||"")+")"); }
+      });
+    });
+  }
+  /* 사용자가 누를 때만 호출 (팝업 차단 방지) */
+  function connect(){
+    if(!tokenClient){ prepare().then(function(){ toast("준비되었습니다. ☁️를 한 번 더 눌러 주세요"); paint(); }).catch(function(e){ setStatus("error", e.message); }); return; }
+    tokenClient.requestAccessToken({prompt: cfg().granted ? "" : "consent"});
+  }
+  function api(url, opt){
+    opt = opt || {}; opt.headers = Object.assign({Authorization:"Bearer "+tok()}, opt.headers||{});
+    return fetch(url, opt).then(function(r){
+      if(r.status===401 || r.status===403){ var c=cfg(); c.token=null; throw new Error(r.status===401?"NEED_TAP":"드라이브 사용 권한이 없습니다 (403)"); }
+      if(!r.ok) throw new Error("드라이브 오류 "+r.status);
+      return r;
+    });
+  }
+  function findFile(){
+    var c = cfg();
+    var q = encodeURIComponent("name='"+SYNC_FILE+"' and trashed=false");
+    return api("https://www.googleapis.com/drive/v3/files?spaces=drive&fields=files(id,modifiedTime)&orderBy=modifiedTime%20desc&q="+q).then(function(r){ return r.json(); })
+      .then(function(j){ var f = j.files && j.files[0]; c.fileId = f ? f.id : null; return c.fileId; });
+  }
+  function download(id){ return api("https://www.googleapis.com/drive/v3/files/"+id+"?alt=media").then(function(r){ return r.text(); }); }
+  function upload(id, body){
+    if(id) return api("https://www.googleapis.com/upload/drive/v3/files/"+id+"?uploadType=media", {method:"PATCH", headers:{"Content-Type":"application/json"}, body:body}).then(function(r){ return r.json(); });
+    var boundary = "swgido"+Date.now(), meta = JSON.stringify({name:SYNC_FILE, mimeType:"application/json"});
+    var multipart = "--"+boundary+"\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"+meta+"\r\n--"+boundary+"\r\nContent-Type: application/json\r\n\r\n"+body+"\r\n--"+boundary+"--";
+    return api("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {method:"POST", headers:{"Content-Type":"multipart/related; boundary="+boundary}, body:multipart}).then(function(r){ return r.json(); }).then(function(j){ cfg().fileId=j.id; return j; });
+  }
+  function run(){
+    var c = cfg();
+    if(!c.on || busy) return Promise.resolve();
+    if(!navigator.onLine){ paint(); return Promise.resolve(); }
+    if(!tok()){ paint(); return Promise.resolve(); }
+    if(!c.pass){ setStatus("error", "비밀 문구를 넣어 주세요 (⚙︎ 설정)"); return Promise.resolve(); }
+    busy = true; paint();
+    return findFile().then(function(id){
+      if(!id) return null;
+      return download(id).then(function(txt){ return Crypt.open(txt, c.pass); });
+    }).then(function(remote){
+      if(remote) mergeInto(remote);
+      return Crypt.seal(JSON.stringify(sharedState()), c.pass);
+    }).then(function(body){ return upload(cfg().fileId, body); })
+    .then(function(){ busy=false; c.last=Date.now(); setStatus("ok", ""); safeRender(); })
+    .catch(function(e){ busy=false;
+      if(e.message==="NEED_TAP"){ setStatus("ok",""); }
+      else if(e.message==="BAD_PASS") setStatus("error", "비밀 문구가 다른 기기와 다릅니다. 같은 문구를 넣어 주세요");
+      else setStatus("error", e.message || "동기화 오류");
+    });
+  }
+  function safeRender(){
+    var a = document.activeElement;
+    if(a && /INPUT|TEXTAREA|SELECT/.test(a.tagName)){ pendingRender = true; return; }
+    if(document.getElementById("ov")) { pendingRender = true; return; }
+    var y = window.scrollY; render(); window.scrollTo(0,y);
+  }
+  document.addEventListener("focusout", function(){ setTimeout(function(){ if(pendingRender && !document.getElementById("ov")){ var a=document.activeElement; if(!(a && /INPUT|TEXTAREA|SELECT/.test(a.tagName))){ pendingRender=false; var y=window.scrollY; render(); window.scrollTo(0,y); } } }, 300); });
+  function soon(){ var c=cfg(); if(!c.on) return; clearTimeout(timer); timer = setTimeout(run, 4000); }
+  function onOpen(){ var c=cfg(); paint(); if(!c.on) return; prepare().then(paint).catch(function(e){ setStatus("error", e.message); }); if(tok()) run(); }
+  window.addEventListener("online", function(){ if(cfg().on) run(); });
+  document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="visible" && cfg().on && tok() && Date.now()-(cfg().last||0) > 60000) run(); });
+  return {run:run, soon:soon, connect:connect, onOpen:onOpen, paint:paint, statusText:statusText, prepare:prepare, cfg:cfg, isBusy:function(){ return busy; }, closeHook:function(){ if(pendingRender){ pendingRender=false; var y=window.scrollY; render(); window.scrollTo(0,y); } }};
+})();
+
+/* 암호화: 비밀 문구 → PBKDF2(SHA-256, 20만 번) → AES-GCM 256 */
+var Crypt = (function(){
+  var keyCache = {};
+  function b64(buf){ var s="", a=new Uint8Array(buf); for(var i=0;i<a.length;i+=0x8000) s+=String.fromCharCode.apply(null, a.subarray(i,i+0x8000)); return btoa(s); }
+  function unb64(str){ var s=atob(str), a=new Uint8Array(s.length); for(var i=0;i<s.length;i++) a[i]=s.charCodeAt(i); return a; }
+  function key(pass, saltB64){
+    var k = pass+"|"+saltB64; if(keyCache[k]) return Promise.resolve(keyCache[k]);
+    return crypto.subtle.importKey("raw", new TextEncoder().encode(pass), "PBKDF2", false, ["deriveKey"]).then(function(km){
+      return crypto.subtle.deriveKey({name:"PBKDF2", salt:unb64(saltB64), iterations:200000, hash:"SHA-256"}, km, {name:"AES-GCM", length:256}, false, ["encrypt","decrypt"]);
+    }).then(function(kk){ keyCache[k]=kk; return kk; });
+  }
+  function seal(text, pass){
+    var c = Sync.cfg(); if(!c.salt) c.salt = b64(crypto.getRandomValues(new Uint8Array(16)));
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    return key(pass, c.salt).then(function(k){ return crypto.subtle.encrypt({name:"AES-GCM", iv:iv}, k, new TextEncoder().encode(text)); })
+      .then(function(ct){ return JSON.stringify({app:"swgido", v:1, enc:"AES-GCM", kdf:"PBKDF2-SHA256-200000", salt:c.salt, iv:b64(iv), data:b64(ct), at:new Date().toISOString()}); });
+  }
+  function open(txt, pass){
+    var f; try{ f = JSON.parse(txt); }catch(e){ return Promise.reject(new Error("동기화 파일이 손상되었습니다")); }
+    if(!f.enc) return Promise.resolve(f.people ? f : null);
+    Sync.cfg().salt = f.salt;
+    return key(pass, f.salt).then(function(k){ return crypto.subtle.decrypt({name:"AES-GCM", iv:unb64(f.iv)}, k, unb64(f.data)); })
+      .then(function(pt){ return JSON.parse(new TextDecoder().decode(pt)); }, function(){ throw new Error("BAD_PASS"); });
+  }
+  return {seal:seal, open:open};
+})();
+
+function syncSettingsHtml(){
+  var c = Sync.cfg();
+  return '<h3>☁️ 기기 간 동기화 (구글 드라이브)</h3><div class="tiny muted">휴대폰과 탭처럼 여러 기기에서 같은 기도 기록을 씁니다. 본인 구글 드라이브의 파일 하나에, 비밀 문구로 <b>암호화</b>해서 저장합니다. 두 기기에 <b>같은 구글 계정·같은 비밀 문구</b>를 넣으세요.</div>'+
+    '<div class="banner" id="syncStatus" style="margin-top:8px">'+Sync.statusText()+'</div>'+
+    (GOOGLE_CLIENT_ID ? '' : '<label class="f">구글 클라이언트 ID</label><input type="text" id="syClient" value="'+esc(c.clientId||"")+'" placeholder="….apps.googleusercontent.com">')+
+    '<label class="f">비밀 문구 (두 기기에 똑같이 · 잊지 않게 따로 적어 두세요)</label><input type="text" id="syPass" value="'+esc(c.pass||"")+'" placeholder="예: 쉬지말고기도하라1223" autocomplete="off" autocapitalize="off" spellcheck="false">'+
+    '<div class="actions">'+(c.on ? '<button class="btn primary" data-act="syncSave">저장 후 지금 동기화</button><button class="btn danger" data-act="syncOff">끄기</button>' : '<button class="btn primary" data-act="syncOn">켜고 구글 연결</button>')+'</div>';
+}
 
 /* 날짜가 바뀌면(자정이 지나 앱을 다시 열면) 새로 그림 */
 var lastDay = today();
@@ -1163,7 +1426,7 @@ function makeIcon(size){
 }
 try{
   var i192=makeIcon(192), i512=makeIcon(512);
-  var mf={name:"쉬지 않는 기도", short_name:"쉬지않는기도", start_url:new URL("./",location.href).href, scope:new URL("./",location.href).href, display:"standalone", orientation:"portrait", background_color:"#111111", theme_color:"#111111",
+  var mf={name:"쉬지 않는 기도", short_name:"쉬지않는기도", start_url:new URL("./",location.href).href, scope:new URL("./",location.href).href, display:"standalone", orientation:"any", background_color:"#111111", theme_color:"#111111",
     icons:[{src:i192,sizes:"192x192",type:"image/png",purpose:"any"},{src:i512,sizes:"512x512",type:"image/png",purpose:"any"}]};
   $("#manifestLink").href="data:application/manifest+json;charset=utf-8,"+encodeURIComponent(JSON.stringify(mf));
   $("#appleIcon").href=i192;
@@ -1173,7 +1436,7 @@ if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){
 }
 if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function(){});
 
-load(); render();
+load(); render(); Sync.onOpen();
 try{ if(sessionStorage.getItem("swgido.picking")){ sessionStorage.removeItem("swgido.picking"); setTimeout(function(){ toast("연락처를 고르는 사이 화면이 새로 열려 추가되지 않았습니다. 한 번 더 해 주세요"); }, 400); } }catch(e){}
 window.addEventListener("error", function(e){ toast("오류: "+(e.message||"")); });
 window.addEventListener("unhandledrejection", function(e){ var r=e.reason; toast("오류: "+((r&&(r.message||r.name))||r||"")); });
