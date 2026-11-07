@@ -179,7 +179,7 @@ label.f{display:block; font-size:13.5px; color:var(--muted); margin:12px 0 4px; 
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-07-1";
+var APP_VERSION = "2026-11-07-2";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -1274,12 +1274,12 @@ function load2(){ SNAP=null; var raw=JSON.stringify(S); try{ localStorage.setIte
    - 본인 구글 드라이브에 이 앱이 만든 파일 하나만 씀 (권한: drive.file — 다른 파일은 볼 수 없음)
    - 올리기 전에 비밀 문구로 AES-GCM 암호화 → 드라이브에는 알아볼 수 없는 글자만 저장
    - 받아서 합치고(mergeInto) 다시 올림 → 두 기기에서 따로 고친 것이 모두 남음 */
-var GOOGLE_CLIENT_ID = "";
+var GOOGLE_CLIENT_ID = "859749044751-dp0pkdrgluds7ruki40gbll9jmkl7401.apps.googleusercontent.com";
 var SYNC_FILE = "쉬지않는기도_동기화.json";
 var Sync = (function(){
   var tokenClient = null, busy = false, timer = null, pendingRender = false;
   function cfg(){ return S.settings.sync || (S.settings.sync = {}); }
-  function clientId(){ return cfg().clientId || GOOGLE_CLIENT_ID; }
+  function clientId(){ return GOOGLE_CLIENT_ID || cfg().clientId; }
   function tok(){ var c=cfg(); return (c.token && c.tokenExp && Date.now() < c.tokenExp-60000) ? c.token : null; }
   function setStatus(st, msg){ var c=cfg(); c.status=st; c.msg=msg||""; try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} paint(); }
   function paint(){
