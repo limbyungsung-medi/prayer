@@ -9,8 +9,9 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="쉬지 않는 기도">
-<link rel="manifest" id="manifestLink">
-<link rel="apple-touch-icon" id="appleIcon">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
 :root{
@@ -174,12 +175,12 @@ label.f{display:block; font-size:13.5px; color:var(--muted); margin:12px 0 4px; 
   <button data-act="tab" data-tab="words"><span class="i">📖</span>말씀</button>
   <button data-act="tab" data-tab="answers"><span class="i">🌿</span>응답</button>
 </div></nav>
-<input type="file" id="fileIn" accept=".json,application/json" hidden>
+<input type="file" id="fileIn" accept=".json,.txt,application/json,text/plain" hidden>
 <input type="file" id="vcfIn" hidden>
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-07-2";
+var APP_VERSION = "2026-11-08-1";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -1039,15 +1040,26 @@ var ACT = {
   },
   syncOff:function(){ if(!confirm("동기화를 끌까요? (이 기기의 기록과 드라이브 파일은 그대로 남습니다)")) return; var c=Sync.cfg(); c.on=false; c.token=null; try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} closeSheet(); Sync.paint(); toast("동기화를 껐습니다"); },
   backup:function(){
-    var bk = sharedState(); bk.settings = Object.assign({}, S.settings); delete bk.settings.sync;
-    var t=today(), data=JSON.stringify(bk), name="쉬지않는기도_백업_"+t+".json";
-    var file; try{ file=new File([data], name, {type:"application/json"}); }catch(e){}
-    var done=function(){ S.settings.lastBackup=t; save(); render(); };
-    if(file && navigator.canShare && navigator.canShare({files:[file]})){
-      navigator.share({files:[file], title:name}).then(function(){ done(); toast("백업을 보냈습니다"); }).catch(function(){});
-    } else {
-      var a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([data],{type:"application/json"})); a.download=name; document.body.appendChild(a); a.click(); a.remove(); done(); toast("백업 파일을 내려받았습니다");
-    }
+    var n = S.people.length, m = S.items.length;
+    openSheet("백업", '<div class="small">사람 '+n+'명 · 기도제목 '+m+'개 · 말씀노트 '+S.notes.length+'개를 파일 하나로 만듭니다.</div>'+
+      '<div class="actions"><button class="btn primary block" data-act="backupShare">📤 카카오톡·메일로 보내기</button></div>'+
+      '<div class="tiny muted" style="margin-top:4px">공유 창에서 카카오톡 → "나와의 채팅"을 고르면 가장 간편합니다.</div>'+
+      '<div class="actions"><button class="btn block" data-act="backupSave">💾 이 기기에 파일로 저장 (다운로드 폴더)</button></div>');
+  },
+  backupShare:function(){
+    var f = backupFile();
+    var can = false; try{ can = !!(navigator.canShare && navigator.canShare({files:[f.file]})); }catch(e){}
+    if(!can){ toast("이 기기는 파일 보내기를 지원하지 않아 저장으로 바꿉니다"); return ACT.backupSave(); }
+    navigator.share({files:[f.file], title:f.name, text:"쉬지 않는 기도 백업 "+today()}).then(function(){ backupDone(); toast("백업을 보냈습니다"); closeSheet(); })
+      .catch(function(e){ if(e && e.name==="AbortError") return; toast("보내지 못했습니다 ("+(e&&e.name||"")+"). 저장으로 해 보세요"); });
+  },
+  backupSave:function(){
+    var f = backupFile();
+    try{
+      var url = URL.createObjectURL(f.file), a=document.createElement("a"); a.href=url; a.download=f.name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
+      backupDone(); closeSheet(); toast("다운로드 폴더에 저장했습니다: "+f.name);
+    }catch(e){ toast("저장하지 못했습니다: "+e.message); }
   },
   restore:function(b){ UI.restoreMode = (b && b.dataset.mode) || "merge"; $("#fileIn").click(); },
   checkUpdate:function(){
@@ -1233,6 +1245,12 @@ function addContactRows(rows){
     save(); closeSheet(); render(); toast(added.length===1 ? added[0].name+"님 — "+(c==="weekly"?DOW[added[0].day]+"요일":circleName(c)) : added.length+"명을 저장했습니다");
   }; });
 }
+function backupFile(){
+  var bk = sharedState(); bk.settings = Object.assign({}, S.settings); delete bk.settings.sync;
+  var t = today(), data = JSON.stringify(bk), name = "쉬지않는기도_백업_"+t+".txt";
+  return {name:name, file:new File([data], name, {type:"text/plain"})};
+}
+function backupDone(){ S.settings.lastBackup=today(); save(); render(); }
 function newNote(d){ var t=today(); return Object.assign({id:uid(), date:t, source:"", preacher:"", ref:"", learned:"", apply:"", fix:"", stepIdx:0, next:addDays(t,1), log:[], status:"active", pick:""}, d); }
 function copyText(t){ if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).catch(function(){ fallbackCopy(t); }); else fallbackCopy(t); }
 function fallbackCopy(t){ var ta=document.createElement("textarea"); ta.value=t; document.body.appendChild(ta); ta.select(); try{ document.execCommand("copy"); }catch(e){} ta.remove(); }
@@ -1308,7 +1326,13 @@ var Sync = (function(){
       if(tokenClient) return;
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: clientId(), scope: "https://www.googleapis.com/auth/drive.file",
-        callback: function(r){ if(r && r.access_token){ var c=cfg(); c.token=r.access_token; c.tokenExp=Date.now()+(Number(r.expires_in)||3600)*1000; c.granted=true; run(); } else setStatus("error", "구글 연결이 취소되었습니다"); },
+        callback: function(r){
+          if(!(r && r.access_token)){ setStatus("error", "구글 연결이 취소되었습니다"+(r&&r.error?" ("+r.error+")":"")); return; }
+          var okScope = true; try{ okScope = google.accounts.oauth2.hasGrantedAllScopes(r, "https://www.googleapis.com/auth/drive.file"); }catch(e){}
+          var c=cfg();
+          if(!okScope){ c.granted=false; c.token=null; setStatus("error", "드라이브 권한이 허용되지 않았습니다. ☁️를 다시 눌러 구글 창에서 드라이브 항목에 체크하고 '계속'을 눌러 주세요"); return; }
+          c.token=r.access_token; c.tokenExp=Date.now()+(Number(r.expires_in)||3600)*1000; c.granted=true; run();
+        },
         error_callback: function(e){ setStatus("error", "구글 연결 창이 열리지 않았습니다 ("+(e&&e.type||"")+")"); }
       });
     });
@@ -1321,9 +1345,17 @@ var Sync = (function(){
   function api(url, opt){
     opt = opt || {}; opt.headers = Object.assign({Authorization:"Bearer "+tok()}, opt.headers||{});
     return fetch(url, opt).then(function(r){
-      if(r.status===401 || r.status===403){ var c=cfg(); c.token=null; throw new Error(r.status===401?"NEED_TAP":"드라이브 사용 권한이 없습니다 (403)"); }
-      if(!r.ok) throw new Error("드라이브 오류 "+r.status);
-      return r;
+      if(r.ok) return r;
+      return r.text().then(function(t){
+        var j={}; try{ j=JSON.parse(t); }catch(e){}
+        var er = j.error || {}, reason = ((er.errors&&er.errors[0]&&er.errors[0].reason)||"") + " " + ((er.details||[]).map(function(d){ return d.reason||""; }).join(" ")) + " " + (er.status||"") + " " + (er.message||"");
+        var c = cfg();
+        if(r.status===401){ c.token=null; throw new Error("NEED_TAP"); }
+        if(/accessNotConfigured|SERVICE_DISABLED|has not been used|is disabled/i.test(reason)) throw new Error("구글 콘솔(swgido)에서 'Google Drive API'가 꺼져 있습니다. ⚙︎ 동기화의 안내 링크에서 '사용'을 눌러 주세요");
+        if(/insufficient|SCOPE/i.test(reason)){ c.token=null; c.granted=false; throw new Error("드라이브 권한이 허용되지 않았습니다. ☁️를 다시 눌러 구글 창에서 드라이브 항목에 체크하고 '계속'을 눌러 주세요"); }
+        if(r.status===403){ c.token=null; throw new Error("드라이브 사용이 거부되었습니다 (403: "+(reason.trim().slice(0,80)||"이유 없음")+")"); }
+        throw new Error("드라이브 오류 "+r.status+" "+reason.trim().slice(0,60));
+      });
     });
   }
   function findFile(){
@@ -1405,6 +1437,7 @@ function syncSettingsHtml(){
   var c = Sync.cfg();
   return '<h3>☁️ 기기 간 동기화 (구글 드라이브)</h3><div class="tiny muted">휴대폰과 탭처럼 여러 기기에서 같은 기도 기록을 씁니다. 본인 구글 드라이브의 파일 하나에, 비밀 문구로 <b>암호화</b>해서 저장합니다. 두 기기에 <b>같은 구글 계정·같은 비밀 문구</b>를 넣으세요.</div>'+
     '<div class="banner" id="syncStatus" style="margin-top:8px">'+Sync.statusText()+'</div>'+
+    (c.status==="error" && /Drive API/.test(c.msg||"") ? '<div class="tiny" style="margin-top:6px">👉 <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com?project=swgido" target="_blank" rel="noopener">Google Drive API 사용 켜기 (swgido)</a></div>' : '')+
     (GOOGLE_CLIENT_ID ? '' : '<label class="f">구글 클라이언트 ID</label><input type="text" id="syClient" value="'+esc(c.clientId||"")+'" placeholder="….apps.googleusercontent.com">')+
     '<label class="f">비밀 문구 (두 기기에 똑같이 · 잊지 않게 따로 적어 두세요)</label><input type="text" id="syPass" value="'+esc(c.pass||"")+'" placeholder="예: 쉬지말고기도하라1223" autocomplete="off" autocapitalize="off" spellcheck="false">'+
     '<div class="actions">'+(c.on ? '<button class="btn primary" data-act="syncSave">저장 후 지금 동기화</button><button class="btn danger" data-act="syncOff">끄기</button>' : '<button class="btn primary" data-act="syncOn">켜고 구글 연결</button>')+'</div>';
@@ -1424,13 +1457,7 @@ function makeIcon(size){
   x.fillStyle="#e9e4d8"; x.fillRect(222*s,346*s,68*s,96*s); x.fillStyle="#cfc8b8"; x.fillRect(200*s,438*s,112*s,18*s);
   return c.toDataURL("image/png");
 }
-try{
-  var i192=makeIcon(192), i512=makeIcon(512);
-  var mf={name:"쉬지 않는 기도", short_name:"쉬지않는기도", start_url:new URL("./",location.href).href, scope:new URL("./",location.href).href, display:"standalone", orientation:"any", background_color:"#111111", theme_color:"#111111",
-    icons:[{src:i192,sizes:"192x192",type:"image/png",purpose:"any"},{src:i512,sizes:"512x512",type:"image/png",purpose:"any"}]};
-  $("#manifestLink").href="data:application/manifest+json;charset=utf-8,"+encodeURIComponent(JSON.stringify(mf));
-  $("#appleIcon").href=i192;
-}catch(e){}
+/* 설치용 manifest·아이콘은 별도 파일(manifest.webmanifest, icon-192.png, icon-512.png, apple-touch-icon.png) */
 if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){
   window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); });
 }
