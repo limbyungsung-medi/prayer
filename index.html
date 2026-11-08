@@ -180,7 +180,7 @@ label.f{display:block; font-size:13.5px; color:var(--muted); margin:12px 0 4px; 
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-08-2";
+var APP_VERSION = "2026-11-09-1";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -587,7 +587,7 @@ var STEP_BODY = {
     var n = short ? 1 : 3; h += '<label class="f">오늘 감사 '+n+'가지</label>';
     for(var i=0;i<n;i++) h += '<input type="text" data-log="thanks.'+i+'" value="'+esc(L.thanks[i]||"")+'" placeholder="'+(i+1)+'." style="margin-bottom:6px">';
     var extra = L.thanks.slice(3).filter(Boolean); if(extra.length) h += extra.map(function(x){ return '<div class="small">• '+esc(x)+'</div>'; }).join("");
-    return h;
+    return h + '<div style="margin-top:6px"><button class="linkbtn small" data-act="openThanks">지난 감사 모아 보기 ›</button></div>';
   },
   personal:function(t){
     var mine = activeItemsOf("me").sort(function(a,b){ return (b.focus?1:0)-(a.focus?1:0); });
@@ -747,7 +747,41 @@ function renderNotes(){
 }
 
 /* ---------- 응답 ---------- */
+function thanksDays(){
+  return Object.keys(S.logs).sort().reverse().map(function(d){
+    var L = S.logs[d] || {}, list = (L.thanks||[]).map(function(x){ return (x||"").trim(); }).filter(Boolean);
+    var ev = L.evening && (L.evening.thanks||"").trim();
+    return {d:d, list:list, ev:ev, praise:(L.praiseMemo||"").trim()};
+  }).filter(function(x){ return x.list.length || x.ev || x.praise; });
+}
+function renderThanks(){
+  var days = thanksDays(), y = today().slice(0,4), q = (UI.thanksQ||"").trim();
+  var total = 0, yearCount = 0;
+  days.forEach(function(x){ var n = x.list.length + (x.ev?1:0); total += n; if(x.d.slice(0,4)===y) yearCount += n; });
+  var h = '<div class="card row" style="justify-content:space-around;text-align:center;margin-top:12px"><div><b style="font-size:22px">'+yearCount+'</b><div class="tiny muted">올해 감사</div></div><div><b style="font-size:22px">'+days.length+'</b><div class="tiny muted">감사를 적은 날</div></div><div><b style="font-size:22px">'+total+'</b><div class="tiny muted">모두</div></div></div>'+
+    '<input type="text" id="thanksQ" value="'+esc(q)+'" placeholder="🔍 감사 내용 찾기 (예: 아내, 건강)" style="margin-top:4px">';
+  if(!days.length) return h + '<div class="empty" style="margin-top:10px">"오늘" 화면의 감사 단계나 저녁 돌아보기에 적은 감사가 날짜별로 여기에 모입니다.</div>';
+  var ql = q.toLowerCase(), cm = "", shown = 0;
+  h += '<div class="actions"><button class="btn sm" data-act="copyThanks" data-scope="month">📋 이번 달 감사 복사</button><button class="btn sm" data-act="copyThanks" data-scope="year">📋 올해 감사 복사</button></div><div id="thanksList">';
+  days.forEach(function(x){
+    var items = x.list.slice(), lines = [];
+    items.forEach(function(t){ lines.push({t:t}); });
+    if(x.ev) lines.push({t:x.ev, ev:true});
+    if(ql){ lines = lines.filter(function(l){ return l.t.toLowerCase().indexOf(ql)>=0; }); if(!lines.length && !(x.praise && x.praise.toLowerCase().indexOf(ql)>=0)) return; }
+    var mk = x.d.slice(0,7); if(mk!==cm){ cm=mk; h += '<div class="yr" style="font-size:18px">'+Number(mk.slice(0,4))+'년 '+Number(mk.slice(5))+'월</div>'; }
+    shown++;
+    h += '<div class="note"><div class="tiny muted">'+fmtDate(x.d)+' '+DOW[dow(x.d)]+'요일</div>'+
+      lines.map(function(l){ return '<div style="margin-top:3px">'+(l.ev?'🌙 ':'🌿 ')+esc(l.t)+'</div>'; }).join("")+
+      (x.praise && !ql ? '<div class="small muted" style="margin-top:4px">찬양 메모: '+esc(x.praise)+'</div>' : '')+'</div>';
+  });
+  if(!shown) h += '<div class="empty">찾는 감사가 없습니다.</div>';
+  return h + '</div><div style="height:24px"></div>';
+}
 function renderAnswers(){
+  var seg = '<h2>응답 · 감사</h2><div class="seg" style="margin-top:6px"><button data-act="aview" data-v="answers" class="'+(UI.ansView!=="thanks"?"on":"")+'">응답 연대기</button><button data-act="aview" data-v="thanks" class="'+(UI.ansView==="thanks"?"on":"")+'">감사 일기</button></div>';
+  return seg + (UI.ansView==="thanks" ? renderThanks() : renderAnswerList());
+}
+function renderAnswerList(){
   var ents = [];
   S.items.forEach(function(it){ if((it.status==="answered"||it.status==="other") && it.answerDate) ents.push({d:it.answerDate, it:it}); });
   S.notes.forEach(function(n){ if(n.status==="fruit" && n.fruitDate) ents.push({d:n.fruitDate, n:n}); });
@@ -755,7 +789,7 @@ function renderAnswers(){
   ents.sort(function(a,b){ return a.d<b.d?1:-1; });
   var y = today().slice(0,4), thisYear = ents.filter(function(e){ return e.d.slice(0,4)===y && e.it; }).length;
   var waiting = S.items.filter(function(it){ return it.status==="waiting"; }).length, act = S.items.filter(function(it){ return it.status==="active"; }).length;
-  var h = '<h2>응답 · 간증</h2><div class="small muted">"그에게 구한 그것을 얻은 줄을 또한 아느니라" (요일 5:15)</div>'+
+  var h = '<div class="small muted" style="margin-top:12px">"그에게 구한 그것을 얻은 줄을 또한 아느니라" (요일 5:15)</div>'+
     '<div class="card row" style="justify-content:space-around;text-align:center"><div><b style="font-size:22px">'+thisYear+'</b><div class="tiny muted">올해 응답</div></div><div><b style="font-size:22px">'+act+'</b><div class="tiny muted">기도 중</div></div><div><b style="font-size:22px">'+waiting+'</b><div class="tiny muted">기다림</div></div></div>';
   if(!ents.length) return h + '<div class="empty">기도제목을 눌러 "응답 기록"을 남기면 여기에 연대기로 쌓입니다.</div>';
   h += '<div class="actions"><button class="btn sm" data-act="copyYear">📋 올해 응답 목록 복사 (간증 준비용)</button></div><div class="tl">';
@@ -926,6 +960,7 @@ function helpSheet(){
   '<h3>알림 대신</h3><p>이 앱은 스스로 알림을 띄울 수 없습니다. 휴대폰 시계 앱에 매일 기도 시간 알람을 맞추고, 홈 화면 첫 자리에 앱 아이콘을 두세요.</p>'+
   '<h3>사람과 요일</h3><p>사람마다 "매일·매주·한 달"을 고릅니다. 매주 원의 분들은 그룹이 섞이도록 7일에 고르게 자동 배정됩니다. 특정 요일에 꼭 기도하고 싶은 분은 요일을 고정(📌)하세요.</p>'+
   '<h3>약속 · 붙든 말씀</h3><p>"말씀" 탭 → "약속 · 붙든 말씀"에 평생 약속, 붙든 말씀, 영적 기념일(예수님 영접일 등)을 적습니다. 일주일에 하나씩 돌아가며 "오늘" 화면 위에 보이고, 그날이 돌아오면 "몇 년 전 오늘"로 알려 드립니다. 붙든 말씀이 이루어지면 "이루어짐"과 간증을 적으세요. 응답 연대기에 카이로스로 남습니다.</p>'+
+  '<h3>감사 일기</h3><p>매일 적은 감사와 저녁 돌아보기의 감사는 "응답" 탭 → "감사 일기"에 날짜별로 모입니다. 찾기와 한 달·한 해 복사(간증·감사 나눔용)도 됩니다.</p>'+
   '<h3>저녁 돌아보기</h3><p>오후 5시가 지나면 "오늘" 화면 아래에 나옵니다. 감사 하나, 고칠 것 하나를 적으면 다음 날 아침 감사·자백 기도로 이어집니다.</p>'+
   '<h3>음력 생일</h3><p>사람 카드에서 생일 옆 "음력"에 체크하면 해마다 양력 날짜를 계산해 알려 드립니다.</p>'+
   '<h3>카카오톡에서 바로 넣기</h3><p>앱을 설치한 휴대폰·탭에서는 카톡 메시지를 길게 눌러 공유 → "쉬지 않는 기도"를 고르면 빠른 입력에 그 글이 채워져 열립니다.</p>'+
@@ -1043,6 +1078,14 @@ var ACT = {
   qSaveFix:function(){ var x=val("qFix"); if(!x) return; S.notes.push(newNote({fix:x, source:"직접"})); save(); closeSheet(); render(); toast("자백 기도에 올라옵니다"); },
   fixDone:function(b){ var n=note(b.dataset.id); n.fixDone=today(); if(!n.apply) n.status="archived"; save(); render(); toast("감사합니다 🙏"); },
   newNote:function(){ noteSheet(null); },
+  aview:function(b){ UI.ansView=b.dataset.v; render(); },
+  openThanks:function(){ UI.tab="answers"; UI.ansView="thanks"; render(); window.scrollTo(0,0); },
+  copyThanks:function(b){
+    var t=today(), key = b.dataset.scope==="month" ? t.slice(0,7) : t.slice(0,4);
+    var lines = ["["+(b.dataset.scope==="month" ? Number(key.slice(0,4))+"년 "+Number(key.slice(5))+"월" : key+"년")+" 감사]"];
+    thanksDays().slice().reverse().forEach(function(x){ if(x.d.indexOf(key)!==0) return; var all = x.list.concat(x.ev?[x.ev]:[]); if(!all.length) return; lines.push(fmtDate(x.d)+": "+all.join(" / ")); });
+    copyText(lines.join("\n")); toast("복사했습니다 ("+(lines.length-1)+"일)");
+  },
   wview:function(b){ UI.wordsView=b.dataset.v; render(); },
   newPromise:function(b){ promiseSheet(null, b.dataset.kind); },
   openPromise:function(b){ var x=S.promises.filter(function(p){ return p.id===b.dataset.id; })[0]; if(x) promiseSheet(x); },
@@ -1395,7 +1438,11 @@ document.addEventListener("click", function(e){
   if(b.tagName==="LI" || b.classList.contains("note") || b.classList.contains("ent") || b.classList.contains("li")){ if(e.target.closest("button,a") && e.target.closest("button,a")!==b) return; }
   a(b, e);
 });
-var saveTimer=null;
+var saveTimer=null, thanksTimer=null;
+document.addEventListener("input", function(e){
+  if(e.target.id!=="thanksQ") return;
+  clearTimeout(thanksTimer); thanksTimer=setTimeout(function(){ UI.thanksQ=e.target.value; var tmp=document.createElement("div"); tmp.innerHTML=renderThanks(); var nl=tmp.querySelector("#thanksList"), ol=$("#thanksList"); if(nl && ol) ol.replaceWith(nl); else render(); }, 250);
+});
 document.addEventListener("input", function(e){
   var k = e.target.dataset && e.target.dataset.log; if(!k) return;
   var L = log(today());
