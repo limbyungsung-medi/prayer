@@ -2,7 +2,8 @@
    앱 화면(index.html)과 글꼴을 휴대폰에 보관해 두었다가, 인터넷이 없으면 보관본으로 연다.
    인터넷이 있으면 늘 서버의 최신 화면을 먼저 받고 보관본도 새로 바꾼다.
    (기도 기록은 원래부터 휴대폰 안(localStorage)에만 저장되어 있어 따로 할 일이 없다.) */
-var CACHE = "prayer-offline-v1";
+var CACHE = "prayer-offline-v2";
+var EXTRA = ["manifest.webmanifest","icon-192.png","icon-512.png","apple-touch-icon.png"].map(function(f){ return new URL(f, self.location).href; });
 var APP_URL = new URL("./", self.location).href;
 var PRETENDARD_CSS = "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css";
 
@@ -10,6 +11,7 @@ self.addEventListener("install", function(event){
   event.waitUntil((async function(){
     var cache = await caches.open(CACHE);
     await fetch(APP_URL, {cache:"reload"}).then(function(r){ if(r.ok) return cache.put(APP_URL, r); }).catch(function(){});
+    await Promise.all(EXTRA.map(function(u){ return fetch(u, {cache:"reload"}).then(function(r){ if(r.ok) return cache.put(u, r); }).catch(function(){}); }));
     precacheCssWithFonts(cache, PRETENDARD_CSS).catch(function(){});
     self.skipWaiting();
   })());
@@ -75,7 +77,13 @@ self.addEventListener("fetch", function(event){
     return;
   }
 
-  /* 2) 글꼴: 보관본 먼저 */
+  /* 2) 아이콘·manifest: 인터넷 먼저, 안 되면 보관본 */
+  if(EXTRA.indexOf(url.href.split("?")[0]) >= 0){
+    event.respondWith(fetch(req).then(function(r){ if(r.ok){ var cp=r.clone(); caches.open(CACHE).then(function(c){ c.put(url.href.split("?")[0], cp); }); } return r; }).catch(function(){ return caches.match(url.href.split("?")[0]); }));
+    return;
+  }
+
+  /* 3) 글꼴: 보관본 먼저 */
   if(url.hostname === "cdn.jsdelivr.net"){
     event.respondWith(caches.open(CACHE).then(function(cache){
       return cache.match(req).then(function(hit){
