@@ -180,7 +180,7 @@ label.f{display:block; font-size:13.5px; color:var(--muted); margin:12px 0 4px; 
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-08-1";
+var APP_VERSION = "2026-11-08-2";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -227,7 +227,7 @@ function load(){
   var d = defaultState();
   S.settings = Object.assign({}, d.settings, S.settings||{});
   S.settings.tpl = Object.assign({}, d.settings.tpl, S.settings.tpl||{});
-  ["people","items","notes","groups"].forEach(function(k){ if(!Array.isArray(S[k])) S[k]=[]; });
+  ["people","items","notes","groups","promises"].forEach(function(k){ if(!Array.isArray(S[k])) S[k]=[]; });
   if(!S.logs) S.logs = {};
   if(!S.tomb) S.tomb = {};
   if(!S.settings.sync) S.settings.sync = {};
@@ -235,7 +235,7 @@ function load(){
 }
 /* ---- 고친 시각 기록 (기기 간 합치기용) ----
    저장할 때마다 이전 저장과 비교해 바뀐 기록에 mt(고친 시각)를 찍고, 사라진 기록은 tomb(지운 기록)에 남긴다. */
-var KINDS = ["groups","people","items","notes"];
+var KINDS = ["groups","people","items","notes","promises"];
 var LOCAL_SETTINGS = ["theme","short","lastBackup","sync","started"];
 var SNAP = null;
 function recJson(r){ var o={}; Object.keys(r).forEach(function(k){ if(k!=="mt") o[k]=r[k]; }); return JSON.stringify(o); }
@@ -292,7 +292,7 @@ function mergeInto(R){
     L.prayed = uniq((a.prayed||[]).concat(b.prayed||[]));
     L.steps = Object.assign({}, older.steps||{}, newer.steps||{});
     L.done = !!(a.done || b.done);
-    ["praiseMemo","confess"].forEach(function(f){ if(!L[f] && older[f]) L[f]=older[f]; });
+    ["praiseMemo","confess","evening"].forEach(function(f){ if(!L[f] && older[f]) L[f]=older[f]; });
     L.thanks = (newer.thanks||[]).map(function(x,i){ return x || (older.thanks||[])[i] || ""; });
     (older.thanks||[]).slice((newer.thanks||[]).length).forEach(function(x){ L.thanks.push(x); });
     L.mt = Math.max(a.mt||0, b.mt||0);
@@ -304,7 +304,7 @@ function mergeInto(R){
   try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){}
   return stats;
 }
-function sharedState(){ var st={}; Object.keys(S.settings).forEach(function(k){ if(LOCAL_SETTINGS.indexOf(k)<0) st[k]=S.settings[k]; }); return {v:1, app:"swgido", groups:S.groups, people:S.people, items:S.items, notes:S.notes, logs:S.logs, tomb:S.tomb, settings:st}; }
+function sharedState(){ var st={}; Object.keys(S.settings).forEach(function(k){ if(LOCAL_SETTINGS.indexOf(k)<0) st[k]=S.settings[k]; }); return {v:1, app:"swgido", groups:S.groups, people:S.people, items:S.items, notes:S.notes, promises:S.promises, logs:S.logs, tomb:S.tomb, settings:st}; }
 function log(d){ if(!S.logs[d]) S.logs[d] = {steps:{}, thanks:["","",""], prayed:[], praiseMemo:"", confess:""}; var L=S.logs[d]; if(!L.steps) L.steps={}; if(!L.thanks) L.thanks=["","",""]; if(!L.prayed) L.prayed=[]; return L; }
 
 /* ============ 조회 ============ */
@@ -411,7 +411,7 @@ function specialsFor(t){
     if(age>=0 && age<=2) add(key, it.personId, it, "새 제목");
     if(it.due){ var dd=diff(t,it.due); if(dd===0) add(key,it.personId,it,"오늘"); else if(dd===1) add(key,it.personId,it,"내일"); else if(dd===-1) add(key,it.personId,it,"결과 묻기"); }
   });
-  S.people.forEach(function(p){ personEvents(p).forEach(function(ev){ if(ev.md===md) add(p.id, p.id, null, ev.label+(ev.kind==="birthday"?" 🎂":" 💐")); }); });
+  S.people.forEach(function(p){ personEvents(p, t).forEach(function(ev){ if(ev.days===0) add(p.id, p.id, null, ev.label+(ev.kind==="birthday"?" 🎂":" 💐")); }); });
   return map;
 }
 /* 생일·기념일 */
@@ -424,10 +424,40 @@ function normDate(v){
   if((m=/^(\d{2})(\d{2})$/.exec(v))) return {y:null, md:m[1]+"-"+m[2]};
   return null;
 }
-function personEvents(p){
+/* 음력(한국 음력 = dangi 달력) → 양력. 휴대폰 브라우저에 들어 있는 달력 계산을 씀 */
+var LUNAR_FMT = null, LCACHE = {};
+function lunarFmt(){
+  if(LUNAR_FMT !== null) return LUNAR_FMT;
+  try{ var f = new Intl.DateTimeFormat("ko-KR-u-ca-dangi", {year:"numeric", month:"numeric", day:"numeric", timeZone:"UTC"}); LUNAR_FMT = /dangi|chinese/.test(f.resolvedOptions().calendar) ? f : false; }
+  catch(e){ LUNAR_FMT = false; }
+  return LUNAR_FMT;
+}
+function lunarYearMap(yy){
+  if(LCACHE[yy]) return LCACHE[yy];
+  var f = lunarFmt(), map = {}; if(!f) return (LCACHE[yy] = map);
+  for(var ms = Date.UTC(yy,0,15,12); ms <= Date.UTC(yy+1,1,25,12); ms += 864e5){
+    var o = {}; f.formatToParts(new Date(ms)).forEach(function(x){ o[x.type] = x.value; });
+    if(Number(o.relatedYear || o.year) !== yy || /윤|bis|leap/i.test(o.month)) continue;
+    var key = Number(String(o.month).replace(/\D/g,"")) + "-" + Number(o.day);
+    if(!map[key]){ var d = new Date(ms); map[key] = d.getUTCFullYear()+"-"+pad(d.getUTCMonth()+1)+"-"+pad(d.getUTCDate()); }
+  }
+  return (LCACHE[yy] = map);
+}
+function lunarToSolar(yy, m, d){ var map = lunarYearMap(yy); return map[m+"-"+d] || map[m+"-"+(d-1)] || null; }
+function solarToLunarText(ymdStr){ var f=lunarFmt(); if(!f) return ""; var o={}; f.formatToParts(new Date(ymdStr+"T12:00:00Z")).forEach(function(x){ o[x.type]=x.value; }); return "음 "+o.month+"/"+o.day; }
+/* 다음에 돌아오는 날(오늘 포함)까지 며칠, 그날의 양력 월-일 */
+function nextOccur(t, md, lunar){
+  if(lunar && lunarFmt()){
+    var m = Number(md.slice(0,2)), d = Number(md.slice(3)), y = Number(t.slice(0,4));
+    for(var yy = y-1; yy <= y+1; yy++){ var sol = lunarToSolar(yy, m, d); if(sol && diff(t, sol) >= 0) return {days:diff(t, sol), md:sol.slice(5), date:sol}; }
+  }
+  var n = daysUntilMD(t, md); return {days:n, md:addDays(t, n).slice(5), date:addDays(t, n)};
+}
+function personEvents(p, t){
+  t = t || today();
   var out = [], b = normDate(p.birthday);
-  if(b) out.push({kind:"birthday", label:"생일", md:b.md, y:b.y});
-  (p.anniversaries||[]).forEach(function(a){ var d=normDate(a.date); if(d) out.push({kind:"anniv", label:a.label||"기념일", md:d.md, y:d.y}); });
+  if(b){ var o = nextOccur(t, b.md, !!p.birthLunar); out.push({kind:"birthday", label:"생일", md:o.md, days:o.days, date:o.date, y:b.y, lunar:!!p.birthLunar, lmd:b.md}); }
+  (p.anniversaries||[]).forEach(function(a){ var d=normDate(a.date); if(d){ var o=nextOccur(t, d.md, !!a.lunar); out.push({kind:"anniv", label:a.label||"기념일", md:o.md, days:o.days, date:o.date, y:d.y, lunar:!!a.lunar, lmd:d.md}); } });
   return out;
 }
 function daysUntilMD(t, md){
@@ -438,10 +468,10 @@ function daysUntilMD(t, md){
 }
 function upcomingEvents(t, days){
   var list = [];
-  S.people.forEach(function(p){ personEvents(p).forEach(function(ev){ var n=daysUntilMD(t, ev.md); if(n>=1 && n<=days) list.push({p:p, ev:ev, n:n}); }); });
+  S.people.forEach(function(p){ personEvents(p, t).forEach(function(ev){ var n=ev.days; if(n>=1 && n<=days) list.push({p:p, ev:ev, n:n}); }); });
   return list.sort(function(a,b){ return a.n-b.n; });
 }
-function evText(u){ var e=u.ev, yrs = e.y ? (Number(addDays(today(),u.n).slice(0,4))-e.y) : 0; return esc(u.p.name)+' '+esc(e.label)+(yrs>0&&yrs<130?' ('+(e.kind==="birthday"?'만 '+yrs+'세':yrs+'주년')+')':'')+' · '+Number(e.md.slice(0,2))+'/'+Number(e.md.slice(3))+' <span class="muted">('+(u.n===1?'내일':u.n+'일 뒤')+')</span>'; }
+function evText(u){ var e=u.ev, yrs = e.y ? (Number(e.date.slice(0,4))-e.y) : 0; return esc(u.p.name)+' '+esc(e.label)+(e.lunar?'(음 '+Number(e.lmd.slice(0,2))+'/'+Number(e.lmd.slice(3))+')':'')+(yrs>0&&yrs<130?' ('+(e.kind==="birthday"?(e.lunar?yrs+'번째 생일':'만 '+yrs+'세'):yrs+'주년')+')':'')+' · '+Number(e.md.slice(0,2))+'/'+Number(e.md.slice(3))+' <span class="muted">('+(u.n===1?'내일':u.n+'일 뒤')+')</span>'; }
 function todayPlan(t){
   var sp = specialsFor(t), seen = {};
   var daily = S.people.filter(function(p){ return p.circle==="daily"; });
@@ -465,13 +495,29 @@ function render(){
 }
 
 /* ---------- 오늘 ---------- */
+/* ---------- 평생 약속 · 붙든 말씀 · 영적 기념일 ---------- */
+var PKIND = {promise:{name:"평생 약속", icon:"🤝", what:"말씀을 따라 이렇게 살겠다는 결심"}, claim:{name:"붙든 말씀", icon:"⚓", what:"이 말씀을 붙들고 기다리는 일"}, memorial:{name:"영적 기념일", icon:"🕯", what:"기념일 이름 (예: 예수님 영접)"}};
+function weekPromise(t){
+  var list = S.promises.filter(function(x){ return x.status==="active" && (x.kind==="promise" || x.kind==="claim"); }).sort(function(a,b){ return (a.date||"")<(b.date||"")?-1:((a.date||"")>(b.date||"")?1:(a.id<b.id?-1:1)); });
+  if(!list.length) return null;
+  return list[Math.floor(dayNum(weekStart(t))/7) % list.length];
+}
+function promiseAnniv(t){
+  var md = t.slice(5), y = Number(t.slice(0,4));
+  return S.promises.filter(function(x){ var d=normDate(x.date); return d && d.md===md && d.y && d.y<y && x.status!=="archived"; })
+    .map(function(x){ return {x:x, yrs:y-normDate(x.date).y}; });
+}
+function promiseLine(x){ return (x.ref?esc(x.ref)+' — ':'')+esc(x.text||x.word||""); }
 var STEPS = [["praise","찬양"],["confess","자백"],["thanks","감사"],["personal","개인 기도"],["intercede","중보 기도"],["word","말씀 상기"]];
 function weekDone(t){ var ws=weekStart(t), n=0, cells=""; for(var i=0;i<7;i++){ var d=addDays(ws,i), L=S.logs[d], dn=L&&L.done; if(dn) n++; cells+='<span class="'+(dn?"done ":"")+(d===t?"today":"")+'">'+DOW[i]+'</span>'; } return {n:n, cells:cells}; }
 function renderToday(){
   var t = today(), L = log(t), short = S.settings.short, wd = weekDone(t);
   var h = '<div class="dayhead"><div class="row"><div class="date">'+fmtDate(t)+' '+DOW[dow(t)]+'요일</div><span class="sp"></span>'+
     '<div class="seg" style="width:auto"><button data-act="setShort" data-v="0" class="'+(short?"":"on")+'">전체</button><button data-act="setShort" data-v="1" class="'+(short?"on":"")+'">짧은 기도</button></div></div>'+
-    '<div class="sub">기도하기를 쉬는 죄를 범치 아니하고 (삼상 12:23) · 이번 주 '+wd.n+'/7일</div><div class="weekdots">'+wd.cells+'</div></div>';
+    '<div class="sub">기도하기를 쉬는 죄를 범치 아니하고 (삼상 12:23) · 이번 주 '+wd.n+'/7일</div>'+
+    (function(){ var wp=weekPromise(t); return wp ? '<div class="small" style="margin-top:6px;cursor:pointer" data-act="openPromise" data-id="'+wp.id+'">'+PKIND[wp.kind].icon+' <span class="muted">이번 주 '+PKIND[wp.kind].name+':</span> '+promiseLine(wp)+'</div>' : ''; })()+
+    '<div class="weekdots">'+wd.cells+'</div></div>';
+  promiseAnniv(t).forEach(function(a){ var x=a.x; h += '<div class="banner" style="cursor:pointer" data-act="openPromise" data-id="'+x.id+'">'+PKIND[x.kind].icon+' <b>'+a.yrs+'년 전 오늘</b> ('+esc(x.date)+') — '+(x.kind==="memorial"?esc(x.text):(x.kind==="promise"?'이 약속을 붙드셨습니다: ':'이 말씀을 붙드셨습니다: ')+promiseLine(x))+(x.context?'<div class="tiny muted" style="margin-top:2px">'+esc(x.context)+'</div>':'')+'<div class="tiny muted" style="margin-top:2px">감사 기도로 올려 드리세요</div></div>'; });
   if(!S.people.length && !S.items.length) h += welcomeCard();
   var steps = short ? STEPS.filter(function(s){ return s[0]==="praise"||s[0]==="thanks"||s[0]==="intercede"; }) : STEPS;
   var wide = isWide();
@@ -489,6 +535,16 @@ function renderToday(){
   h += wide ? '<div class="todaycols"><div class="colL">'+left+'</div><div class="colR">'+right+'</div></div>' : left;
   h += '<div class="finish">' + (L.done ? '<div class="banner" style="text-align:center">오늘 기도를 마쳤습니다 ✓ · 이번 주 '+wd.n+'/7일</div>'
       : '<button class="btn primary block" data-act="finishDay">🙏 오늘 기도 마침</button>') + '</div>';
+  var hr = new Date().getHours(), ev = L.evening || {};
+  if(S.settings.evening!==false && (hr>=17 || ev.thanks || ev.fix || UI.showEvening)){
+    h += '<div class="step open" id="evening"><div class="sh"><span class="num">🌙</span><span class="st">저녁 돌아보기</span><span class="ss">2분'+(ev.done?' · ✓':'')+'</span></div><div class="sb">'+
+      '<div class="small muted">오늘 하루를 주님 앞에서 돌아봅니다. 적은 것은 내일 아침 감사·자백 기도로 이어집니다.</div>'+
+      '<label class="f">오늘 감사한 일 하나</label><input type="text" data-log="evening.thanks" value="'+esc(ev.thanks||"")+'">'+
+      '<label class="f">오늘 고칠 것 하나</label><input type="text" data-log="evening.fix" value="'+esc(ev.fix||"")+'">'+
+      '<div class="actions"><button class="btn '+(ev.done?'':'primary')+' block" data-act="eveningDone">'+(ev.done?'저장됨 ✓ (고치면 다시 누르기)':'돌아보기 마침')+'</button></div></div></div>';
+  } else if(S.settings.evening!==false){
+    h += '<div style="text-align:center;margin:6px 0"><button class="linkbtn small" data-act="showEvening">🌙 저녁 돌아보기 열기</button></div>';
+  }
   var lb = S.settings.lastBackup;
   if((S.people.length||S.items.length) && (!lb || diff(lb,t)>=7)) h += '<div class="banner warn">휴대폰을 잃어버리거나 바꿀 때를 대비해 일주일에 한 번 백업해 두세요. <button class="linkbtn" data-act="backup">지금 백업 ›</button></div>';
   return h + '<div style="height:24px"></div>';
@@ -526,6 +582,8 @@ var STEP_BODY = {
   thanks:function(t,L,p,short){
     var ans = S.items.filter(function(it){ return (it.status==="answered"||it.status==="other") && it.answerDate && diff(it.answerDate,t)>=0 && diff(it.answerDate,t)<=3; });
     var h = ans.length ? '<div class="small muted">최근 응답하신 일</div>' + ans.map(function(it){ var pp=person(it.personId); return '<div class="note" data-act="openItem" data-id="'+it.id+'"><div class="row"><span class="chip good">🌿 '+(it.status==="other"?"다르게 응답":"응답")+'</span><span class="tiny muted">'+(pp?esc(pp.name):(it.personId==="me"?"나":""))+' · '+daysTxt(it)+'</span></div><div class="ap">'+esc(it.title)+'</div>'+(it.answerText?'<div class="small">'+esc(it.answerText)+'</div>':'')+'</div>'; }).join("") : "";
+    var yl = S.logs[addDays(t,-1)], ye = yl && yl.evening;
+    if(ye && ye.thanks) h += '<div class="note"><div class="tiny muted">🌙 어젯밤 돌아본 감사</div><div class="ap">'+esc(ye.thanks)+'</div></div>';
     var n = short ? 1 : 3; h += '<label class="f">오늘 감사 '+n+'가지</label>';
     for(var i=0;i<n;i++) h += '<input type="text" data-log="thanks.'+i+'" value="'+esc(L.thanks[i]||"")+'" placeholder="'+(i+1)+'." style="margin-bottom:6px">';
     var extra = L.thanks.slice(3).filter(Boolean); if(extra.length) h += extra.map(function(x){ return '<div class="small">• '+esc(x)+'</div>'; }).join("");
@@ -554,8 +612,9 @@ var STEP_BODY = {
     return h;
   },
   word:function(t){
-    var dn = dueNotes(t), pk = thisWeekPick(t);
-    var h = dn.length ? dn.map(function(n){ return '<div class="note"><div class="row tiny muted">'+fmtDate(n.date)+' · '+esc(n.source||"")+(n.preacher?' · '+esc(n.preacher):'')+'<span class="sp"></span>'+refHtml(n.ref)+'</div>'+
+    var dn = dueNotes(t), pk = thisWeekPick(t), wp = weekPromise(t);
+    var h = wp ? '<div class="note" style="border-color:var(--accent);cursor:pointer" data-act="openPromise" data-id="'+wp.id+'"><div class="row tiny muted">'+PKIND[wp.kind].icon+' 이번 주 '+PKIND[wp.kind].name+(wp.date?' · '+esc(wp.date)+'부터':'')+'<span class="sp"></span>'+refHtml(wp.ref)+'</div>'+(wp.word?'<div class="small" style="margin-top:4px">'+esc(wp.word)+'</div>':'')+'<div class="ap">'+esc(wp.text)+'</div>'+(wp.kind==="claim"?'<div class="tiny muted">기다린 지 '+(wp.date&&normDate(wp.date)&&normDate(wp.date).y?Math.max(0,diff(normDate(wp.date).y+"-"+normDate(wp.date).md, t)).toLocaleString()+'일':'')+' · 하나님의 때(카이로스)를 신뢰하며</div>':'<div class="tiny muted">이 약속대로 살게 하소서</div>')+'</div>' : '';
+    h += dn.length ? dn.map(function(n){ return '<div class="note"><div class="row tiny muted">'+fmtDate(n.date)+' · '+esc(n.source||"")+(n.preacher?' · '+esc(n.preacher):'')+'<span class="sp"></span>'+refHtml(n.ref)+'</div>'+
         (n.learned?'<div class="small" style="margin-top:6px">'+esc(n.learned)+'</div>':'')+'<div class="ap">'+esc(n.apply)+'</div><div class="small muted">실천했나요? <span class="tiny">('+(n.log?n.log.length:0)+'번째 다시 봄)</span></div>'+
         '<div class="actions" style="margin-top:8px"><button class="btn sm good" data-act="recall" data-r="yes" data-id="'+n.id+'">예</button><button class="btn sm" data-act="recall" data-r="notyet" data-id="'+n.id+'">아직</button><button class="btn sm" data-act="recall" data-r="habit" data-id="'+n.id+'">습관이 됨</button><button class="btn sm ghost" data-act="recall" data-r="archive" data-id="'+n.id+'">보관</button></div></div>'; }).join("")
       : '<div class="empty">'+(S.notes.length?'오늘 다시 볼 적용은 없습니다.':'"말씀" 탭에 설교·성경읽기에서 받은 적용을 적어 두면, 1·3·7·14·30·90·180일 뒤에 여기로 다시 올라옵니다.')+'</div>';
@@ -631,14 +690,55 @@ function renderPeople(){
 
 /* ---------- 말씀 ---------- */
 var RECALL = [1,3,7,14,30,90,180,365];
+function renderWordsHead(){ return '<h2>말씀</h2>'; }
 function renderWords(){
+  var seg = renderWordsHead() + '<div class="seg" style="margin-top:14px"><button data-act="wview" data-v="notes" class="'+(UI.wordsView!=="promises"?"on":"")+'">적용 노트</button><button data-act="wview" data-v="promises" class="'+(UI.wordsView==="promises"?"on":"")+'">약속 · 붙든 말씀</button></div>';
+  return UI.wordsView==="promises" ? seg + renderPromises() : seg + renderNotes();
+}
+function renderPromises(){
+  var t = today();
+  var card = function(x){
+    var d = normDate(x.date), yrs = d && d.y ? Number(t.slice(0,4)) - d.y : null;
+    var sub = x.kind==="claim" ? (x.status==="fulfilled" ? '<span class="chip good">🌿 '+esc(x.fulfilledDate||"")+' 이루어짐'+(d&&d.y&&x.fulfilledDate?' · '+Math.round(diff(d.y+"-"+d.md, x.fulfilledDate)/365*10)/10+'년 만에':'')+'</span>' : (d&&d.y?'<span class="tiny muted">기다린 지 '+Math.max(0,diff(d.y+"-"+d.md,t)).toLocaleString()+'일</span>':'<span class="tiny muted">기다리는 중</span>')) : (yrs!=null&&yrs>0?'<span class="tiny muted">'+yrs+'년째</span>':'');
+    return '<div class="note" data-act="openPromise" data-id="'+x.id+'"><div class="row tiny muted">'+PKIND[x.kind].icon+' '+(x.date?esc(x.date):'')+'<span class="sp"></span>'+(x.ref?'<span class="chip">'+esc(x.ref)+'</span>':'')+'</div>'+
+      (x.word?'<div class="small" style="margin-top:4px">'+esc(x.word)+'</div>':'')+'<div class="ap">'+esc(x.text)+'</div>'+(x.context?'<div class="tiny muted">'+esc(x.context)+'</div>':'')+(x.kairos?'<div class="small" style="margin-top:4px">카이로스: '+esc(x.kairos)+'</div>':'')+'<div style="margin-top:4px">'+sub+'</div></div>';
+  };
+  var sec = function(kind, title, desc){
+    var list = S.promises.filter(function(x){ return x.kind===kind && x.status!=="archived"; }).sort(function(a,b){ return (a.date||"")<(b.date||"")?-1:1; });
+    return '<h3>'+PKIND[kind].icon+' '+title+' '+list.length+'</h3><div class="tiny muted">'+desc+'</div>'+(list.length?'<div class="ngrid">'+list.map(card).join("")+'</div>':'')+'<div class="actions" style="margin-top:6px"><button class="btn sm" data-act="newPromise" data-kind="'+kind+'">＋ '+title+'</button></div>';
+  };
+  var h = '<div class="small muted" style="margin-top:12px">평생 붙들고 사는 약속과 말씀. 일주일에 하나씩 돌아가며 "오늘" 화면 위와 말씀 상기에 올라오고, 그 약속을 붙든 날이 돌아오면 "몇 년 전 오늘"로 알려 드립니다.</div>';
+  h += sec("promise", "평생 약속", "말씀을 따라 이렇게 살겠노라고 결심한 것 (예: 마 6:33)");
+  h += sec("claim", "붙든 말씀", "삶에서 주장한 말씀과 기다리는 일 — 이루어지면 카이로스 기록을 남기고 응답 연대기에 들어갑니다");
+  h += sec("memorial", "영적 기념일", "예수님 영접, 헌신, 세례처럼 기억하고 감사할 날");
+  var arch = S.promises.filter(function(x){ return x.status==="archived"; });
+  if(arch.length) h += '<h3>보관 '+arch.length+'</h3><div class="ngrid">'+arch.map(card).join("")+'</div>';
+  return h + '<div style="height:24px"></div>';
+}
+function promiseSheet(x, kind){
+  var isNew = !x; x = x || {kind:kind||"promise", ref:"", word:"", text:"", date:today(), context:"", status:"active", fulfilledDate:"", kairos:""};
+  var h = radio("prKind", [["promise","🤝 평생 약속"],["claim","⚓ 붙든 말씀"],["memorial","🕯 영적 기념일"]], x.kind)+
+    '<div id="prRefWrap"><label class="f">말씀 (예: 마 6:33)</label><input type="text" id="prRef" value="'+esc(x.ref)+'" placeholder="마 6:33">'+
+    '<label class="f">말씀 내용 (선택 · 내 말로 짧게)</label><input type="text" id="prWord" value="'+esc(x.word)+'" placeholder="먼저 그의 나라와 의를 구하라"></div>'+
+    '<label class="f" id="prTextLabel">'+PKIND[x.kind].what+'</label><textarea id="prText">'+esc(x.text)+'</textarea>'+
+    '<label class="f">날짜 (그 약속을 붙든 날 · 기념일)</label><input type="text" id="prDate" value="'+esc(x.date)+'" placeholder="1984-05-17">'+
+    '<label class="f">그때 상황 (선택)</label><textarea id="prCtx" placeholder="어디서, 어떤 일 가운데">'+esc(x.context)+'</textarea>'+
+    '<div id="prClaimWrap" style="'+(x.kind==="claim"?"":"display:none")+'"><h3>카이로스 — 하나님의 때</h3>'+radio("prStatus", [["active","기다리는 중"],["fulfilled","이루어짐"]], x.status==="fulfilled"?"fulfilled":"active")+
+    '<div id="prFulWrap" style="'+(x.status==="fulfilled"?"":"display:none")+'"><label class="f">이루어진 날</label><input type="date" id="prFulDate" value="'+esc(x.fulfilledDate||today())+'"><label class="f">어떻게 이루어졌나 (간증)</label><textarea id="prKairos">'+esc(x.kairos||"")+'</textarea></div></div>'+
+    (isNew?'':'<div class="check"><input type="checkbox" id="prArch" '+(x.status==="archived"?"checked":"")+'><label for="prArch">보관 (더 이상 순환하지 않음)</label></div>')+
+    '<div class="actions"><button class="btn primary" data-act="savePromise" data-id="'+(x.id||"")+'">저장</button>'+(isNew?'':'<button class="btn danger" data-act="delPromise" data-id="'+x.id+'">삭제</button>')+'</div>';
+  openSheet(isNew?"새로 적기":PKIND[x.kind].name, h, function(){ $("#prRefWrap").style.display = x.kind==="memorial"?"none":""; });
+  RADIO_HOOK.prKind = function(v){ $("#prTextLabel").textContent = PKIND[v].what; $("#prClaimWrap").style.display = v==="claim"?"":"none"; $("#prRefWrap").style.display = v==="memorial"?"none":""; };
+  RADIO_HOOK.prStatus = function(v){ $("#prFulWrap").style.display = v==="fulfilled"?"":"none"; };
+}
+function renderNotes(){
   var t = today();
   var act = S.notes.filter(function(n){ return n.status==="active"; }).sort(function(a,b){ return (a.next||"9")<(b.next||"9")?-1:1; });
   var fruit = S.notes.filter(function(n){ return n.status==="fruit"; }), arch = S.notes.filter(function(n){ return n.status==="archived"; });
   var card = function(n){ return '<div class="note" data-act="openNote" data-id="'+n.id+'"><div class="row tiny muted">'+fmtDate(n.date)+' · '+esc(n.source||"")+(n.preacher?' · '+esc(n.preacher):'')+'<span class="sp"></span>'+(n.ref?'<span class="chip">'+esc(n.ref)+'</span>':'')+'</div>'+
     (n.apply?'<div class="ap">'+esc(n.apply)+'</div>':'')+(n.learned?'<div class="small">'+esc(n.learned)+'</div>':'')+(n.fix?'<div class="small"><span class="chip">고칠 것</span> '+esc(n.fix)+(n.fixDone?' ✓':'')+'</div>':'')+
     (n.status==="active"&&n.apply?'<div class="tiny muted" style="margin-top:4px">다음에 다시 봄: '+(n.next<=t?'<b style="color:var(--accent)">오늘</b>':fmtDate(n.next))+' · 실천 '+((n.log||[]).filter(function(x){return x.r==="yes";}).length)+'번'+(n.pick===weekStart(t)?' · <b style="color:var(--accent)">이번 주 붙잡을 것</b>':'')+'</div>':'')+'</div>'; };
-  var h = '<h2>말씀노트</h2><div class="small muted">설교·성경읽기·암송·QT에서 받은 적용과 결심. 적어 두면 정해진 날 "오늘" 화면에 다시 올라옵니다.</div>'+
+  var h = '<div class="small muted" style="margin-top:12px">설교·성경읽기·암송·QT에서 받은 적용과 결심. 적어 두면 정해진 날 "오늘" 화면에 다시 올라옵니다.</div>'+
     '<div class="actions"><button class="btn primary" data-act="newNote">＋ 적용 적기</button></div>';
   h += '<h3>진행 중 '+act.length+'</h3>' + (act.length?'<div class="ngrid">'+act.map(card).join("")+'</div>':'<div class="empty">아직 없습니다.</div>');
   if(fruit.length) h += '<h3>열매 (습관이 됨) '+fruit.length+'</h3>' + '<div class="ngrid">'+fruit.map(card).join("")+'</div>';
@@ -651,6 +751,7 @@ function renderAnswers(){
   var ents = [];
   S.items.forEach(function(it){ if((it.status==="answered"||it.status==="other") && it.answerDate) ents.push({d:it.answerDate, it:it}); });
   S.notes.forEach(function(n){ if(n.status==="fruit" && n.fruitDate) ents.push({d:n.fruitDate, n:n}); });
+  S.promises.forEach(function(x){ if(x.kind==="claim" && x.status==="fulfilled" && x.fulfilledDate) ents.push({d:x.fulfilledDate, pr:x}); });
   ents.sort(function(a,b){ return a.d<b.d?1:-1; });
   var y = today().slice(0,4), thisYear = ents.filter(function(e){ return e.d.slice(0,4)===y && e.it; }).length;
   var waiting = S.items.filter(function(it){ return it.status==="waiting"; }).length, act = S.items.filter(function(it){ return it.status==="active"; }).length;
@@ -663,6 +764,8 @@ function renderAnswers(){
     var yy = e.d.slice(0,4); if(yy!==cy){ cy=yy; h += '<div class="yr">'+yy+'</div>'; }
     if(e.it){ var it=e.it, p=person(it.personId);
       h += '<div class="ent" data-act="openItem" data-id="'+it.id+'"><div class="tiny muted">'+fmtDate(e.d)+' · '+(p?esc(p.name):(it.personId==="me"?"나":"받은 제목"))+' · '+daysTxt(it)+(it.status==="other"?' · 다르게 응답':'')+'</div><div style="font-weight:700">'+esc(it.title)+'</div>'+(it.answerText?'<div class="small">'+esc(it.answerText)+'</div>':'')+'</div>';
+    } else if(e.pr){ var x=e.pr, d0=normDate(x.date);
+      h += '<div class="ent" data-act="openPromise" data-id="'+x.id+'"><div class="tiny muted">'+fmtDate(e.d)+' · ⚓ 카이로스'+(x.ref?' · '+esc(x.ref):'')+(d0&&d0.y?' · '+esc(x.date)+'부터 붙든 말씀':'')+'</div><div style="font-weight:700">'+esc(x.text)+'</div>'+(x.kairos?'<div class="small">'+esc(x.kairos)+'</div>':'')+'</div>';
     } else { var n=e.n;
       h += '<div class="ent" data-act="openNote" data-id="'+n.id+'"><div class="tiny muted">'+fmtDate(e.d)+' · 적용의 열매'+(n.ref?' · '+esc(n.ref):'')+'</div><div style="font-weight:700">'+esc(n.apply)+'</div></div>';
     }
@@ -704,7 +807,7 @@ function personSheet(p){
     '<label class="f">그룹</label><select id="pGroup">'+groupOptions(p.groupId)+'</select>'+
     '<label class="f">얼마나 자주</label>'+radio("pCircle", [["daily","매일"],["weekly","매주"],["monthly","한 달에 한 번"]], p.circle)+
     '<div id="pDayWrap" style="'+(p.circle==="weekly"?"":"display:none")+'"><label class="f">요일'+(p.id&&p.circle==="weekly"&&p.day!=null?' — 지금 '+DOW[p.day]+'요일':'')+'</label><select id="pDay">'+dayOpts+'</select></div>'+
-    '<label class="f">생일 (그날 축복 기도로, 일주일 전부터 미리 알림)</label><input type="text" id="pBirth" value="'+esc(p.birthday)+'" placeholder="예: 04-18 또는 1963-04-18">'+
+    '<label class="f">생일 (그날 축복 기도로, 일주일 전부터 미리 알림)</label><div class="row"><input type="text" id="pBirth" value="'+esc(p.birthday)+'" placeholder="예: 04-18 또는 1963-04-18" style="flex:1"><label class="check" style="margin:0;white-space:nowrap"><input type="checkbox" id="pBirthLunar" '+(p.birthLunar?"checked":"")+'>음력</label></div>'+(p.birthLunar&&p.birthday&&lunarFmt()?'<div class="tiny muted" style="margin-top:4px">올해(또는 다음) 양력: '+(function(){ var b=normDate(p.birthday); if(!b) return ""; var o=nextOccur(today(), b.md, true); return fmtDate(o.date); })()+'</div>':'')+
     '<label class="f">기념일 (결혼기념일 등)</label><div id="annWrap">'+(p.anniversaries||[]).map(annRow).join("")+'</div><div class="actions" style="margin-top:6px"><button type="button" class="btn sm" data-act="addAnn">＋ 기념일</button></div>'+
     '<label class="f">메모</label><textarea id="pMemo" placeholder="관계, 기억할 것" style="min-height:'+(p.memo&&p.memo.length>80?160:70)+'px">'+esc(p.memo)+'</textarea>';
   if(!isNew){
@@ -716,7 +819,7 @@ function personSheet(p){
   openSheet(isNew?"사람 추가":p.name, h, function(){ $("#pName").focus && isNew && $("#pName").focus(); });
   RADIO_HOOK.pCircle = function(v){ $("#pDayWrap").style.display = v==="weekly" ? "" : "none"; };
 }
-function annRow(a){ a=a||{label:"",date:""}; return '<div class="row ann" style="margin-top:6px"><input type="text" class="annLabel" value="'+esc(a.label)+'" placeholder="결혼기념일" style="flex:1"><input type="text" class="annDate" value="'+esc(a.date)+'" placeholder="05-17" style="flex:1"><button type="button" class="iconbtn" data-act="delAnn" aria-label="지우기">✕</button></div>'; }
+function annRow(a){ a=a||{label:"",date:""}; return '<div class="row ann" style="margin-top:6px"><input type="text" class="annLabel" value="'+esc(a.label)+'" placeholder="결혼기념일" style="flex:1"><input type="text" class="annDate" value="'+esc(a.date)+'" placeholder="05-17" style="flex:1"><label class="check" style="margin:0;white-space:nowrap;font-size:13px"><input type="checkbox" class="annLunar" '+(a.lunar?"checked":"")+'>음력</label><button type="button" class="iconbtn" data-act="delAnn" aria-label="지우기">✕</button></div>'; }
 function statusChip(it){ var m={active:["기도 중",""],answered:["응답","good"],other:["다르게 응답","good"],waiting:["기다림","warn"],released:["내려놓음",""]}[it.status]||["",""]; return '<span class="chip '+m[1]+'">'+m[0]+'</span>'; }
 
 /* 기도제목 시트 */
@@ -756,8 +859,8 @@ function noteSheet(n){
 }
 
 /* 빠른 입력 */
-function quickSheet(pid, kind){
-  kind = kind || "item";
+function quickSheet(pid, kind, preset){
+  kind = kind || "item"; UI.qPreset = preset || "";
   var h = radio("qKind", [["item","🙏 기도제목"],["note","📖 말씀 적용"],["thanks","🌿 감사"],["fix","✋ 고칠 것"]], kind)+'<div id="qBody" style="margin-top:6px"></div>';
   openSheet("빠른 입력", h, function(){ qBody(kind, pid); });
   RADIO_HOOK.qKind = function(v){ qBody(v, pid); };
@@ -781,6 +884,7 @@ function qBody(kind, pid){
     h = '<label class="f">고칠 것</label><input type="text" id="qFix" placeholder="내일 자백 기도에 올라옵니다"><div class="actions"><button class="btn primary block" data-act="qSaveFix">저장</button></div>';
   }
   b.innerHTML = h;
+  if(kind==="item" && UI.qPreset){ $("#qText").value = UI.qPreset; var nl = UI.qPreset.split("\n").filter(function(x){ return x.trim(); }).length; if(nl>1 && nl<=12) $("#qSplit").checked = true; UI.qPreset = ""; }
   var sel = $("#qPerson"); if(sel) sel.addEventListener("change", function(){ $("#qNewWrap").style.display = sel.value==="__new" ? "" : "none"; });
   var first = b.querySelector("textarea,input[type=text]"); if(first) setTimeout(function(){ first.focus(); }, 50);
 }
@@ -788,7 +892,7 @@ function qBody(kind, pid){
 /* 메시지 시트 */
 function msgSheet(p, kind){
   var t = today();
-  if(!kind){ kind = "pray"; var md0=t.slice(5); if(personEvents(p).some(function(ev){ return ev.md===md0; })) kind="bday"; else if(S.items.some(function(it){ return it.personId===p.id && it.status==="active" && it.due && diff(it.due,t)===1; })) kind="due"; }
+  if(!kind){ kind = "pray"; if(personEvents(p, t).some(function(ev){ return ev.days===0; })) kind="bday"; else if(S.items.some(function(it){ return it.personId===p.id && it.status==="active" && it.due && diff(it.due,t)===1; })) kind="due"; }
   var txt = (S.settings.tpl[kind]||"").replace(/\{이름\}/g, p.name);
   var h = '<div class="tiny muted">문구를 고친 뒤 보낼 방법을 고르세요. 카카오톡은 공유 창에서 카카오톡 → 친구를 고르면 됩니다.</div><textarea id="mText" style="margin-top:8px;min-height:90px">'+esc(txt)+'</textarea>'+
     '<div class="actions"><button class="btn" data-act="sendSms" data-id="'+p.id+'" '+(p.phone?"":"disabled")+'>💬 문자</button><button class="btn kk" style="border-radius:10px;padding:9px 14px;font-size:15px" data-act="sendKakao" data-id="'+p.id+'">카카오톡</button><button class="btn" data-act="copyMsg" data-id="'+p.id+'">📋 복사</button></div>'+
@@ -800,6 +904,7 @@ function msgSheet(p, kind){
 function settingsSheet(){
   var st = S.settings;
   var h = '<label class="f">화면</label>'+radio("sTheme", [["dark","어둡게"],["light","밝게"]], st.theme)+
+    '<label class="f">저녁 돌아보기 (오후 5시부터 "오늘" 아래에)</label>'+radio("sEvening", [["on","보이기"],["off","숨기기"]], S.settings.evening===false?"off":"on")+
     '<label class="f">중보 하루 상한 (매주 원)</label><input type="number" id="sCap" min="3" max="40" value="'+(st.cap||10)+'">'+
     '<h3>그룹</h3><div class="tiny muted">이름을 고치거나, 특정 요일에 그룹 전체를 기도하려면 요일을 고르세요(예: 팀 모임 전날).</div>'+
     S.groups.map(function(g){ return '<div class="row" style="margin-top:8px"><span class="dot" style="background:'+g.color+'"></span><input type="text" data-gname="'+g.id+'" value="'+esc(g.name)+'" style="flex:2"><select data-gday="'+g.id+'" style="flex:1"><option value="">요일 자동</option>'+DOW.map(function(d,i){ return '<option value="'+i+'" '+(g.fixedDay===i?"selected":"")+'>'+d+' 고정</option>'; }).join("")+'</select><button class="iconbtn" data-act="delGroup" data-id="'+g.id+'" aria-label="그룹 삭제">🗑</button></div>'; }).join("")+
@@ -820,6 +925,10 @@ function helpSheet(){
   '<h3>매일 기도</h3><p>"오늘" 화면에서 찬양 → 자백 → 감사 → 개인 → 중보 → 말씀 상기를 차례로 하고 "마침"을 누릅니다. 바쁜 날은 위의 "짧은 기도"를 누르면 꼭 필요한 것만 보입니다.</p>'+
   '<h3>알림 대신</h3><p>이 앱은 스스로 알림을 띄울 수 없습니다. 휴대폰 시계 앱에 매일 기도 시간 알람을 맞추고, 홈 화면 첫 자리에 앱 아이콘을 두세요.</p>'+
   '<h3>사람과 요일</h3><p>사람마다 "매일·매주·한 달"을 고릅니다. 매주 원의 분들은 그룹이 섞이도록 7일에 고르게 자동 배정됩니다. 특정 요일에 꼭 기도하고 싶은 분은 요일을 고정(📌)하세요.</p>'+
+  '<h3>약속 · 붙든 말씀</h3><p>"말씀" 탭 → "약속 · 붙든 말씀"에 평생 약속, 붙든 말씀, 영적 기념일(예수님 영접일 등)을 적습니다. 일주일에 하나씩 돌아가며 "오늘" 화면 위에 보이고, 그날이 돌아오면 "몇 년 전 오늘"로 알려 드립니다. 붙든 말씀이 이루어지면 "이루어짐"과 간증을 적으세요. 응답 연대기에 카이로스로 남습니다.</p>'+
+  '<h3>저녁 돌아보기</h3><p>오후 5시가 지나면 "오늘" 화면 아래에 나옵니다. 감사 하나, 고칠 것 하나를 적으면 다음 날 아침 감사·자백 기도로 이어집니다.</p>'+
+  '<h3>음력 생일</h3><p>사람 카드에서 생일 옆 "음력"에 체크하면 해마다 양력 날짜를 계산해 알려 드립니다.</p>'+
+  '<h3>카카오톡에서 바로 넣기</h3><p>앱을 설치한 휴대폰·탭에서는 카톡 메시지를 길게 눌러 공유 → "쉬지 않는 기도"를 고르면 빠른 입력에 그 글이 채워져 열립니다.</p>'+
   '<h3>연락처 가져오기</h3><p>"사람" 탭 → 📂 연락처 가져오기. 삼성 연락처 앱에서 VCF 파일로 내보낸 뒤 그 파일을 고르면, 이름·전화·생일·기념일·메모를 함께 가져옵니다. 생일과 기념일은 일주일 전부터 "오늘" 화면에 미리 보이고, 당일에는 축복 기도로 올라옵니다.</p>'+
   '<h3>기도제목 넣기</h3><p>어디서든 ＋ 버튼. 단톡방 기도제목은 복사한 뒤 "붙여넣기"를 누르세요. 새 제목은 3일간 "오늘 특별히"에 매일 올라오고, 긴급은 응답될 때까지 매일, 날짜가 있는 제목은 전날과 당일에 올라오고 다음 날 "결과 묻기"가 뜹니다.</p>'+
   '<h3>응답</h3><p>기도제목을 눌러 "응답됨"을 고르고 내용과 날짜를 적으세요. 다음 날 감사 기도에 올라오고 "응답" 탭에 연대기로 쌓입니다.</p>'+
@@ -845,6 +954,13 @@ var ACT = {
     UI.open=null; render();
     var nx=document.querySelector(".step.open"); if(nx) nx.scrollIntoView({behavior:"smooth", block:"start"});
   },
+  showEvening:function(){ UI.showEvening=true; render(); var e=$("#evening"); if(e) e.scrollIntoView({behavior:"smooth", block:"start"}); },
+  eveningDone:function(){
+    var t=today(), L=log(t), ev=L.evening=L.evening||{};
+    var fx=(ev.fix||"").trim();
+    if(fx){ var ex = ev.fixNote && note(ev.fixNote); if(ex){ ex.fix=fx; } else { var nn=newNote({fix:fx, source:"저녁 돌아보기", date:t}); S.notes.push(nn); ev.fixNote=nn.id; } }
+    ev.done=true; save(); var y=window.scrollY; render(); window.scrollTo(0,y); toast("내일 아침 기도로 이어집니다 🌙");
+  },
   finishDay:function(){ var t=today(), L=log(t); L.done=true; save(); render(); toast("오늘도 기도의 자리를 지키셨습니다 🙏"); },
   welcomeSave:function(){
     var names = val("welcomeNames").split(/[,，、\n]/).map(function(s){ return s.trim(); }).filter(Boolean);
@@ -865,8 +981,8 @@ var ACT = {
     var id=b.dataset.id, p=id?person(id):null, isNew=!p;
     if(isNew){ p={id:uid(), created:today(), lastContact:""}; S.people.push(p); }
     var oldCircle=p.circle, oldGroup=p.groupId;
-    p.name=name; p.phone=val("pPhone"); p.groupId=$("#pGroup").value; p.circle=radioVal("pCircle")||"weekly"; p.birthday=val("pBirth"); p.memo=val("pMemo");
-    p.anniversaries = Array.prototype.map.call(document.querySelectorAll("#annWrap .ann"), function(r){ return {label:r.querySelector(".annLabel").value.trim(), date:r.querySelector(".annDate").value.trim()}; }).filter(function(a){ return a.date; });
+    p.name=name; p.phone=val("pPhone"); p.groupId=$("#pGroup").value; p.circle=radioVal("pCircle")||"weekly"; p.birthday=val("pBirth"); p.birthLunar=$("#pBirthLunar").checked; p.memo=val("pMemo");
+    p.anniversaries = Array.prototype.map.call(document.querySelectorAll("#annWrap .ann"), function(r){ return {label:r.querySelector(".annLabel").value.trim(), date:r.querySelector(".annDate").value.trim(), lunar:r.querySelector(".annLunar").checked}; }).filter(function(a){ return a.date; });
     if(p.circle==="weekly"){
       var dv=$("#pDay").value;
       if(dv==="auto"){ if(p.dayFixed || oldCircle!=="weekly" || oldGroup!==p.groupId || p.day==null){ p.dayFixed=false; p.day=null; } }
@@ -927,6 +1043,23 @@ var ACT = {
   qSaveFix:function(){ var x=val("qFix"); if(!x) return; S.notes.push(newNote({fix:x, source:"직접"})); save(); closeSheet(); render(); toast("자백 기도에 올라옵니다"); },
   fixDone:function(b){ var n=note(b.dataset.id); n.fixDone=today(); if(!n.apply) n.status="archived"; save(); render(); toast("감사합니다 🙏"); },
   newNote:function(){ noteSheet(null); },
+  wview:function(b){ UI.wordsView=b.dataset.v; render(); },
+  newPromise:function(b){ promiseSheet(null, b.dataset.kind); },
+  openPromise:function(b){ var x=S.promises.filter(function(p){ return p.id===b.dataset.id; })[0]; if(x) promiseSheet(x); },
+  savePromise:function(b){
+    var id=b.dataset.id, x=id?S.promises.filter(function(p){ return p.id===id; })[0]:null, isNew=!x;
+    var kind=radioVal("prKind")||"promise", text=$("#prText").value.trim(), ref=val("prRef");
+    if(!text && !ref) return toast(kind==="memorial"?"기념일 이름을 적어 주세요":"말씀이나 내용을 적어 주세요");
+    if(isNew){ x={id:uid(), created:today()}; S.promises.push(x); }
+    var wasFul = x.status==="fulfilled";
+    x.kind=kind; x.ref=kind==="memorial"?"":ref; x.word=kind==="memorial"?"":val("prWord"); x.text=text; x.date=val("prDate"); x.context=$("#prCtx").value.trim();
+    var st = kind==="claim" ? (radioVal("prStatus")||"active") : "active";
+    if(st==="fulfilled"){ x.fulfilledDate=val("prFulDate")||today(); x.kairos=$("#prKairos").value.trim(); } else { x.fulfilledDate=""; }
+    x.status = ($("#prArch") && $("#prArch").checked) ? "archived" : st;
+    save(); closeSheet(); render();
+    toast(x.status==="fulfilled" && !wasFul ? "하나님의 때에 이루셨습니다 🌿 응답 연대기에 넣었습니다" : "저장했습니다");
+  },
+  delPromise:function(b){ if(!confirm("이 기록을 삭제할까요?")) return; S.promises=S.promises.filter(function(p){ return p.id!==b.dataset.id; }); save(); closeSheet(); render(); },
   openNote:function(b){ var n=note(b.dataset.id); if(n) noteSheet(n); },
   saveNote:function(b){
     var id=b.dataset.id, n=id?note(id):null;
@@ -1010,7 +1143,7 @@ var ACT = {
     copyText(lines.join("\n")); toast("복사했습니다");
   },
   saveSettings:function(){
-    var st=S.settings; st.theme=radioVal("sTheme")||st.theme; st.cap=Math.max(3, Number(val("sCap"))||10);
+    var st=S.settings; st.theme=radioVal("sTheme")||st.theme; st.evening = radioVal("sEvening")!=="off"; st.cap=Math.max(3, Number(val("sCap"))||10);
     st.tpl={pray:val("tPray"), due:val("tDue"), answer:val("tAns"), bday:val("tBday")};
     var changed=false;
     document.querySelectorAll("[data-gname]").forEach(function(e){ var g=group(e.dataset.gname); if(g && e.value.trim()) g.name=e.value.trim(); });
@@ -1266,7 +1399,9 @@ var saveTimer=null;
 document.addEventListener("input", function(e){
   var k = e.target.dataset && e.target.dataset.log; if(!k) return;
   var L = log(today());
-  if(k.indexOf("thanks.")===0){ L.thanks[Number(k.split(".")[1])] = e.target.value; } else L[k] = e.target.value;
+  if(k.indexOf("thanks.")===0){ L.thanks[Number(k.split(".")[1])] = e.target.value; }
+  else if(k.indexOf("evening.")===0){ L.evening = L.evening || {}; L.evening[k.split(".")[1]] = e.target.value; }
+  else L[k] = e.target.value;
   clearTimeout(saveTimer); saveTimer=setTimeout(save, 400);
 });
 $("#fileIn").addEventListener("change", function(e){
@@ -1464,6 +1599,15 @@ if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){
 if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function(){});
 
 load(); render(); Sync.onOpen();
+/* 카카오톡 등에서 "공유 → 쉬지 않는 기도"로 들어온 글 */
+(function(){ try{
+  var q = new URLSearchParams(location.search);
+  if(q.get("share")){
+    var txt = [q.get("title"), q.get("text"), q.get("url")].filter(function(x){ return x && x.trim(); }).join("\n").trim();
+    history.replaceState(null, "", location.pathname);
+    if(txt) setTimeout(function(){ quickSheet(undefined, "item", txt); toast("받은 글을 기도제목으로 넣습니다. 누구를 위한 것인지 고르세요"); }, 300);
+  }
+}catch(e){} })();
 try{ if(sessionStorage.getItem("swgido.picking")){ sessionStorage.removeItem("swgido.picking"); setTimeout(function(){ toast("연락처를 고르는 사이 화면이 새로 열려 추가되지 않았습니다. 한 번 더 해 주세요"); }, 400); } }catch(e){}
 window.addEventListener("error", function(e){ toast("오류: "+(e.message||"")); });
 window.addEventListener("unhandledrejection", function(e){ var r=e.reason; toast("오류: "+((r&&(r.message||r.name))||r||"")); });
