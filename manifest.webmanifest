@@ -1,0 +1,18 @@
+{
+  "id": "./",
+  "name": "쉬지 않는 기도",
+  "short_name": "쉬지않는기도",
+  "description": "개인 기도노트 — 요일 순환 중보기도, 응답 기록, 말씀 적용",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#111111",
+  "theme_color": "#111111",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
