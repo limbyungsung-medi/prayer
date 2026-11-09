@@ -180,7 +180,7 @@ label.f{display:block; font-size:13.5px; color:var(--muted); margin:12px 0 4px; 
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-09-2";
+var APP_VERSION = "2026-11-09-3";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -211,7 +211,7 @@ function defaultState(){
   var names = ["파이오니아팀","한국네비게이토","STA지구","선교사","병원 직원","처가·친척","열방"];
   return {
     v:1,
-    groups: names.map(function(n,i){ return {id:uid()+i, name:n, color:GROUP_COLORS[i%GROUP_COLORS.length], fixedDay:null}; }),
+    groups: names.map(function(n,i){ return {id:"dg"+i, name:n, color:GROUP_COLORS[i%GROUP_COLORS.length], fixedDay:null, def:true}; }),
     people: [], items: [], notes: [], logs: {},
     settings: { cap:10, theme:"dark", short:false, lastBackup:"", started:today(),
       tpl:{ pray:"오늘 {이름}님을 위해 기도했어요. 요즘 어떠세요?",
@@ -303,7 +303,23 @@ function mergeInto(R){
   S.tomb = T;
   SNAP = snapshot(false);
   try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){}
+  if(dedupeGroups()) save({noSync:true});   /* 지운 그룹은 기록(tomb)에 남겨 다른 기기에서도 사라지게 */
   return stats;
+}
+function dedupeGroups(){
+  var byName = {}, drop = {}, changed = false;
+  S.groups.slice().sort(function(a,b){ return a.id<b.id?-1:1; }).forEach(function(g){
+    var k = (g.name||"").replace(/\s+/g,"").toLowerCase();
+    if(!k) return;
+    if(!byName[k]){ byName[k] = g; return; }
+    var keep = byName[k];
+    if(keep.fixedDay==null && g.fixedDay!=null) keep.fixedDay = g.fixedDay;
+    drop[g.id] = keep.id;
+  });
+  if(!Object.keys(drop).length) return false;
+  S.people.forEach(function(p){ if(p.groupId && drop[p.groupId]){ p.groupId = drop[p.groupId]; changed = true; } });
+  S.groups = S.groups.filter(function(g){ return !drop[g.id]; });
+  return true;
 }
 function sharedState(){ var st={}; Object.keys(S.settings).forEach(function(k){ if(LOCAL_SETTINGS.indexOf(k)<0) st[k]=S.settings[k]; }); return {v:1, app:"swgido", groups:S.groups, people:S.people, items:S.items, notes:S.notes, promises:S.promises, logs:S.logs, tomb:S.tomb, settings:st}; }
 function log(d){ if(!S.logs[d]) S.logs[d] = {steps:{}, thanks:["","",""], prayed:[], praiseMemo:"", confess:""}; var L=S.logs[d]; if(!L.steps) L.steps={}; if(!L.thanks) L.thanks=["","",""]; if(!L.prayed) L.prayed=[]; return L; }
@@ -1565,7 +1581,11 @@ var Sync = (function(){
       if(!id) return null;
       return download(id).then(function(txt){ return Crypt.open(txt, c.pass); });
     }).then(function(remote){
-      if(remote) mergeInto(remote);
+      if(remote){
+        var fresh = !S.people.length && !S.items.length && !S.notes.length && !(S.promises||[]).length;
+        if(fresh && (remote.groups||[]).length){ S.groups = S.groups.filter(function(g){ return !g.def; }); SNAP = snapshot(false); }
+        mergeInto(remote);
+      }
       return Crypt.seal(JSON.stringify(sharedState()), c.pass);
     }).then(function(body){ return upload(cfg().fileId, body); })
     .then(function(){ busy=false; c.last=Date.now(); setStatus("ok", ""); safeRender(); })
@@ -1646,7 +1666,7 @@ if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){
 }
 if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function(){});
 
-load(); render(); Sync.onOpen();
+load(); if(dedupeGroups()) save(); render(); Sync.onOpen();
 /* 카카오톡 등에서 "공유 → 쉬지 않는 기도"로 들어온 글 */
 (function(){ try{
   var q = new URLSearchParams(location.search);
