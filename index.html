@@ -159,22 +159,152 @@ label.f{display:block; font-size:13.5px; color:var(--muted); margin:12px 0 4px; 
   .step .sh{padding:16px 18px;} .step .sb{padding:0 18px 18px;}
 }
 .linkbtn{background:none; border:0; color:var(--accent); font-weight:700; cursor:pointer; padding:0; font-size:inherit;}
+/* ===== 디자인 다듬기: 작은 휴대폰에서 읽기 쉽고 누르기 쉽게 =====
+   · 누르는 것은 모두 최소 44px  · 글자는 본문 17px, 보조 14px 이상  · 간격은 4의 배수 */
+:root{ --faint:#7d7d7d; --r:14px; --tap:44px; }
+:root.light{ --faint:#8a857b; }
+html,body{font-size:17px; line-height:1.6;}
+body{padding-bottom:calc(110px + env(safe-area-inset-bottom));}
+.wrap{padding:0 16px;}
+.small{font-size:14.5px;} .tiny{font-size:13px;}
+h2{font-size:22px; font-weight:800; letter-spacing:-.02em; margin:20px 0 8px;}
+h3{font-size:17px; font-weight:800; margin:22px 0 8px; letter-spacing:-.01em;}
+/* 머리줄 */
+header.top{background:color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);}
+header.top .wrap{height:52px;}
+.brand{font-size:17px; font-weight:800; letter-spacing:-.02em;}
+.iconbtn{width:var(--tap); height:var(--tap); border-radius:12px; color:var(--muted);}
+.iconbtn svg{width:24px; height:24px;}
+/* 아래 탭 */
+nav.bottom{background:color-mix(in srgb, var(--card) 94%, transparent); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);}
+nav.bottom .wrap{height:64px;}
+nav.bottom button{font-size:12.5px; gap:3px; font-weight:600; color:var(--faint); padding-top:2px;}
+nav.bottom button .i{display:grid; place-items:center; width:52px; height:30px; border-radius:15px; transition:background .15s;}
+nav.bottom button .i svg{width:23px; height:23px;}
+nav.bottom button.on{color:var(--accent); font-weight:800;}
+nav.bottom button.on .i{background:var(--accentSoft);}
+.fab{width:56px; height:56px; bottom:calc(80px + env(safe-area-inset-bottom)); font-size:30px; display:grid; place-items:center; box-shadow:0 6px 18px rgba(0,0,0,.4);}
+.fab svg{width:28px; height:28px;}
+/* 단추 */
+.btn{min-height:var(--tap); padding:10px 16px; border-radius:12px; font-size:16px; justify-content:center;}
+.btn.sm{min-height:40px; padding:8px 14px; font-size:15px; border-radius:11px;}
+.btn.block{min-height:52px; font-size:17px; border-radius:14px;}
+.btn.primary{font-weight:800;}
+.btn:active,.cbtn:active,.praybtn:active,.namechips button:active,.radio button:active,.pchip:active{transform:scale(.97);}
+.linkbtn{min-height:36px; display:inline-flex; align-items:center;}
+.linkbtn.tiny{min-height:32px;}
+.chip{font-size:13px; padding:2px 10px; line-height:1.5;}
+/* 입력 */
+input[type=text],input[type=tel],input[type=date],input[type=number],select,textarea{min-height:48px; padding:11px 14px; border-radius:12px; font-size:17px;}
+textarea{min-height:88px;}
+label.f{font-size:14.5px; margin:16px 0 6px;}
+.check{min-height:var(--tap); font-size:16px;}
+.check input{width:22px; height:22px;}
+.seg{border-radius:13px; padding:4px;}
+.seg button{min-height:40px; font-size:15px; border-radius:10px;}
+.radio{gap:8px;}
+.radio button{min-height:var(--tap); padding:8px 14px; font-size:15.5px; border-radius:12px; flex:1 1 auto;}
+/* 카드 · 단계 */
+.card,.step{border-radius:18px;}
+.card{padding:16px;}
+.step{margin:12px 0;}
+.step .sh{min-height:64px; padding:12px 16px; gap:12px;}
+.step .num{width:32px; height:32px; font-size:15px;}
+.step .st{font-size:18px; font-weight:800; letter-spacing:-.01em;}
+.step .ss{font-size:14px;}
+.step .sb{padding:0 16px 16px;}
+.secttl{font-size:14.5px; margin:22px 0 8px;}
+.note{border-radius:14px; padding:14px;}
+.note .ap{font-size:17.5px; line-height:1.5;}
+.banner{border-radius:14px; padding:14px; font-size:15.5px; line-height:1.55;}
+.empty{font-size:15.5px;}
+/* 오늘 머리 */
+.dayhead{padding:18px 0 4px;}
+.dayhead .date{font-size:26px; font-weight:800; letter-spacing:-.03em; line-height:1.25;}
+.dayhead .sub{font-size:13.5px; color:var(--faint); margin-top:2px;}
+.weekdots{gap:6px; margin-top:14px;}
+.weekdots span{height:36px; display:grid; place-items:center; font-size:14px; font-weight:600; border-radius:10px; padding:0;}
+.weekdots span.today{outline:2px solid var(--accent); outline-offset:-2px; color:var(--text);}
+.mottos{margin-top:14px; background:var(--card); border:1px solid var(--line); border-radius:18px; overflow:hidden;}
+.mline{display:flex; gap:12px; align-items:flex-start; padding:12px 16px; cursor:pointer; min-height:56px;}
+.mline + .mline{border-top:1px solid var(--line);}
+.mline .mi{font-size:18px; line-height:1.4; flex:none; width:22px; text-align:center;}
+.mline .ml{font-size:13px; color:var(--muted); font-weight:600;}
+.mline .mt{font-size:16px; line-height:1.5; font-weight:600; margin-top:1px;}
+/* 사람 카드 */
+.pcard{border-radius:16px; padding:14px 14px 12px; margin:10px 0; background:var(--card2); border-color:transparent;}
+:root.light .pcard{background:var(--card); border-color:var(--line);}
+.pcard .pn{font-size:18px; font-weight:800; letter-spacing:-.01em;}
+.pcard .row{min-height:var(--tap);}
+.pcard .pn{white-space:nowrap; flex:none;}
+.pcard .row .chip{min-width:0; overflow:hidden; text-overflow:ellipsis; flex-shrink:1;}
+.pcard .items{margin:8px 0 4px;}
+.pcard .items li{padding:10px 0 10px 16px; font-size:16.5px; line-height:1.5; border-top:1px solid var(--line);}
+.pcard .items li::before{top:10px;}
+.cbtn{width:var(--tap); height:var(--tap); border-radius:12px; font-size:18px; background:var(--bg); flex:none;}
+.praybtn{min-height:48px; margin-top:10px; border:0; background:var(--bg); border-radius:12px; font-size:16px; color:var(--text);}
+.pcard.prayed{opacity:1;}
+.pcard.prayed .pn,.pcard.prayed .items{opacity:.55;}
+.pcard.prayed .praybtn{background:var(--goodSoft); color:var(--good);}
+.namechips{gap:8px;}
+.namechips button{min-height:var(--tap); padding:8px 16px; font-size:16px; border-radius:22px; background:var(--card2); border-color:transparent;}
+.namechips button.on{background:var(--goodSoft); color:var(--good);}
+.pchip{min-height:40px; padding:6px 14px; font-size:16px; margin:4px 4px 0 0; background:var(--card2); border-color:transparent;}
+:root.light .namechips button,:root.light .pchip{background:var(--card2);}
+/* 오늘의 OAT */
+.oatgrid{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px;}
+.oatgrid button{display:flex; align-items:center; gap:8px; text-align:left; min-height:52px; padding:8px 12px; border-radius:12px; border:1px solid var(--line); background:var(--bg); cursor:pointer; font-size:15.5px; font-weight:600; line-height:1.3;}
+.oatgrid button .ck{flex:none; width:22px; height:22px; border-radius:7px; border:2px solid var(--faint); display:grid; place-items:center; font-size:14px; font-weight:900;}
+.oatgrid button .nm{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis;}
+.oatgrid button .sb2{display:block; font-size:12.5px; font-weight:500; color:var(--muted);}
+.oatgrid button.on{background:var(--goodSoft); border-color:transparent; color:var(--good);}
+.oatgrid button.on .ck{background:var(--good); border-color:var(--good); color:var(--bg);}
+.oatgrid button.auto .ck{border-radius:50%; border-style:dashed;}
+.oatgrid button.due .sb2{color:var(--warn); font-weight:700;}
+/* 목록 · 시트 */
+.list .li{padding:14px 0; min-height:52px;}
+.sheet{border-radius:22px 22px 0 0; padding:6px 18px calc(24px + env(safe-area-inset-bottom));}
+.sheet .grab{width:44px; height:5px; margin:8px auto 2px;}
+.sheet .shd{padding:10px 0; min-height:56px;}
+.sheet .shd b{font-size:19px; font-weight:800; letter-spacing:-.01em;}
+.actions{gap:10px; margin-top:18px;}
+.toast{border-radius:14px; padding:12px 18px; font-size:15.5px; bottom:calc(150px + env(safe-area-inset-bottom));}
+.kinds2 .radio{display:grid; grid-template-columns:1fr 1fr;}
+.kinds{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+.kinds button{flex:none;}
+.vini button{min-width:36px; height:36px; font-size:15px;}
+.bar{height:8px; border-radius:4px;}
+.bar i{border-radius:4px;}
+/* 설치 안내 */
+.installbar{display:flex; align-items:center; gap:12px; margin-top:14px; padding:12px 14px; border-radius:16px; background:var(--accentSoft); font-size:15px; line-height:1.45;}
+.installbar b{display:block; font-size:15.5px;}
+@media (display-mode: standalone){ .installbar{display:none !important;} }
+@media (max-width: 360px){
+  html,body{font-size:16px;}
+  .wrap{padding:0 12px;}
+  .dayhead .date{font-size:23px;}
+  .oatgrid button{font-size:14.5px; padding:8px 10px;}
+}
+@media (min-width: 900px){
+  .pgrid .pcard{margin:6px 0;}
+  .oatgrid{grid-template-columns:repeat(4, 1fr);}
+}
 </style>
 </head>
 <body>
 <header class="top"><div class="wrap">
   <div class="brand" id="brand">쉬지 않는 기도</div>
   <button class="iconbtn" id="syncBtn" data-act="syncTap" aria-label="동기화" style="display:none;font-size:15px;width:auto;padding:0 8px;gap:4px"></button>
-  <button class="iconbtn" data-act="settings" aria-label="설정">⚙︎</button>
+  <button class="iconbtn" data-act="settings" aria-label="설정"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
 </div></header>
 <main class="wrap" id="main"></main>
-<button class="fab" data-act="quickAdd" aria-label="빠른 입력">＋</button>
+<button class="fab" data-act="quickAdd" aria-label="빠른 입력"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
 <nav class="bottom"><div class="wrap">
-  <button data-act="tab" data-tab="today"><span class="i">🕯️</span>오늘</button>
-  <button data-act="tab" data-tab="people"><span class="i">👥</span>사람</button>
-  <button data-act="tab" data-tab="words"><span class="i">📖</span>말씀</button>
-  <button data-act="tab" data-tab="answers"><span class="i">🌿</span>응답</button>
-  <button data-act="tab" data-tab="oat"><span class="i">🎯</span>OAT</button>
+  <button data-act="tab" data-tab="today"><span class="i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c1.6 2 2.4 3.3 2.4 4.6a2.4 2.4 0 0 1-4.8 0C9.6 6.3 10.4 5 12 3z"/><rect x="8.5" y="11" width="7" height="10" rx="1.5"/></svg></span>오늘</button>
+  <button data-act="tab" data-tab="people"><span class="i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c.6-3.4 3-5.4 6-5.4s5.4 2 6 5.4"/><circle cx="17" cy="9" r="2.6"/><path d="M16.5 14.2c2.4.2 4 1.9 4.5 4.8"/></svg></span>사람</button>
+  <button data-act="tab" data-tab="words"><span class="i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5C10 5 7.3 4.5 4 4.8v13.4c3.3-.3 6 .2 8 1.8 2-1.6 4.7-2.1 8-1.8V4.8c-3.3-.3-6 .2-8 1.7z"/><path d="M12 6.5V20"/></svg></span>말씀</button>
+  <button data-act="tab" data-tab="answers"><span class="i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19c0-8 5-13 14-14-.5 9-5.5 14-14 14z"/><path d="M5 19c3-4 6-6.5 9.5-8.5"/></svg></span>응답</button>
+  <button data-act="tab" data-tab="oat"><span class="i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.8"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/></svg></span>OAT</button>
 </div></nav>
 <input type="file" id="fileIn" accept=".json,.txt,application/json,text/plain" hidden>
 <input type="file" id="vcfIn" hidden>
@@ -182,7 +312,7 @@ label.f{display:block; font-size:13.5px; color:var(--muted); margin:12px 0 4px; 
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-10-2";
+var APP_VERSION = "2026-11-10-3";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -534,9 +664,10 @@ function renderToday(){
   var t = today(), L = log(t), short = S.settings.short, wd = weekDone(t);
   var h = '<div class="dayhead"><div class="row"><div class="date">'+fmtDate(t)+' '+DOW[dow(t)]+'요일</div><span class="sp"></span>'+
     '<div class="seg" style="width:auto"><button data-act="setShort" data-v="0" class="'+(short?"":"on")+'">전체</button><button data-act="setShort" data-v="1" class="'+(short?"on":"")+'">짧은 기도</button></div></div>'+
-    '<div class="sub">기도하기를 쉬는 죄를 범치 아니하고 (삼상 12:23) · 이번 주 '+wd.n+'/7일</div>'+
-    (function(){ var wp=weekPromise(t); return wp ? '<div class="small" style="margin-top:6px;cursor:pointer" data-act="openPromise" data-id="'+wp.id+'">'+PKIND[wp.kind].icon+' <span class="muted">이번 주 '+PKIND[wp.kind].name+':</span> '+promiseLine(wp)+'</div>' : ''; })()+oatHeaderLine(t)+
-    '<div class="weekdots">'+wd.cells+'</div></div>';
+    '<div class="sub">기도하기를 쉬는 죄를 범치 아니하고 (삼상 12:23)</div>'+
+    '<div class="weekdots">'+wd.cells+'</div>'+
+    (function(){ var wp=weekPromise(t), m=""; if(wp) m += '<div class="mline" data-act="openPromise" data-id="'+wp.id+'"><span class="mi">'+PKIND[wp.kind].icon+'</span><div><div class="ml">이번 주 '+PKIND[wp.kind].name+(wp.ref?' · '+esc(wp.ref):'')+'</div><div class="mt">'+esc(wp.text||wp.word||"")+'</div></div></div>'; m += oatHeaderLine(t); return m ? '<div class="mottos">'+m+'</div>' : ''; })()+
+    installBar()+'</div>';
   promiseAnniv(t).forEach(function(a){ var x=a.x; h += '<div class="banner" style="cursor:pointer" data-act="openPromise" data-id="'+x.id+'">'+PKIND[x.kind].icon+' <b>'+a.yrs+'년 전 오늘</b> ('+esc(x.date)+') — '+(x.kind==="memorial"?esc(x.text):(x.kind==="promise"?'이 약속을 붙드셨습니다: ':'이 말씀을 붙드셨습니다: ')+promiseLine(x))+(x.context?'<div class="tiny muted" style="margin-top:2px">'+esc(x.context)+'</div>':'')+'<div class="tiny muted" style="margin-top:2px">감사 기도로 올려 드리세요</div></div>'; });
   h += pepBanner(t) + oatTodayCard(t);
   if(!S.people.length && !S.items.length) h += welcomeCard();
@@ -927,7 +1058,7 @@ function noteSheet(n){
 /* 빠른 입력 */
 function quickSheet(pid, kind, preset){
   kind = kind || "item"; UI.qPreset = preset || "";
-  var h = radio("qKind", [["item","🙏 기도제목"],["note","📖 말씀 적용"],["thanks","🌿 감사"],["fix","✋ 고칠 것"]], kind)+'<div id="qBody" style="margin-top:6px"></div>';
+  var h = '<div class="kinds2">'+radio("qKind", [["item","🙏 기도제목"],["note","📖 말씀 적용"],["thanks","🌿 감사"],["fix","✋ 고칠 것"]], kind)+'</div><div id="qBody" style="margin-top:6px"></div>';
   openSheet("빠른 입력", h, function(){ qBody(kind, pid); });
   RADIO_HOOK.qKind = function(v){ qBody(v, pid); };
 }
@@ -973,7 +1104,7 @@ function settingsSheet(){
     '<label class="f">저녁 돌아보기 (오후 5시부터 "오늘" 아래에)</label>'+radio("sEvening", [["on","보이기"],["off","숨기기"]], S.settings.evening===false?"off":"on")+
     '<label class="f">중보 하루 상한 (매주 원)</label><input type="number" id="sCap" min="3" max="40" value="'+(st.cap||10)+'">'+
     '<h3>그룹</h3><div class="tiny muted">이름을 고치거나, 특정 요일에 그룹 전체를 기도하려면 요일을 고르세요(예: 팀 모임 전날).</div>'+
-    S.groups.map(function(g){ return '<div class="row" style="margin-top:8px"><span class="dot" style="background:'+g.color+'"></span><input type="text" data-gname="'+g.id+'" value="'+esc(g.name)+'" style="flex:2"><select data-gday="'+g.id+'" style="flex:1"><option value="">요일 자동</option>'+DOW.map(function(d,i){ return '<option value="'+i+'" '+(g.fixedDay===i?"selected":"")+'>'+d+' 고정</option>'; }).join("")+'</select><button class="iconbtn" data-act="delGroup" data-id="'+g.id+'" aria-label="그룹 삭제">🗑</button></div>'; }).join("")+
+    S.groups.map(function(g){ return '<div class="row" style="margin-top:8px"><span class="dot" style="background:'+g.color+'"></span><input type="text" data-gname="'+g.id+'" value="'+esc(g.name)+'" style="flex:1;min-width:0"><select data-gday="'+g.id+'" style="flex:none;width:96px;padding:11px 8px"><option value="">자동</option>'+DOW.map(function(d,i){ return '<option value="'+i+'" '+(g.fixedDay===i?"selected":"")+'>'+d+' 고정</option>'; }).join("")+'</select><button class="iconbtn" data-act="delGroup" data-id="'+g.id+'" aria-label="그룹 삭제">🗑</button></div>'; }).join("")+
     '<div class="actions"><button class="btn sm" data-act="addGroup">＋ 그룹 추가</button></div>'+
     '<h3>메시지 문구</h3><label class="f">기도 후 ({이름} 자리에 이름이 들어감)</label><input type="text" id="tPray" value="'+esc(st.tpl.pray)+'"><label class="f">날짜 다음 날 결과 묻기</label><input type="text" id="tDue" value="'+esc(st.tpl.due)+'"><label class="f">응답 후 함께 감사</label><input type="text" id="tAns" value="'+esc(st.tpl.answer)+'"><label class="f">생일·기념일 축하</label><input type="text" id="tBday" value="'+esc(st.tpl.bday)+'">'+
     '<div class="actions"><button class="btn primary block" data-act="saveSettings">설정 저장</button></div>'+
@@ -1789,21 +1920,22 @@ function oatTodayItems(t){
 function oatTodayCard(t){
   var items = oatTodayItems(t), yl = S.logs[addDays(t,-1)], prep = yl && yl.evening && yl.evening.tomorrow;
   if(!items.length && !prep) return "";
-  var h = '<div class="card" id="oatToday" style="padding:12px 14px"><div class="row" style="font-weight:800"><span>🎯 오늘의 OAT</span><span class="sp"></span><button class="linkbtn tiny" data-act="tab" data-tab="oat">OAT 전체 ›</button></div>';
-  if(prep) h += '<div class="small" style="margin-top:6px">🌙 어젯밤 정한 오늘 준비: <b>'+esc(prep)+'</b></div>';
-  h += '<div class="namechips" style="margin-top:8px">';
+  var h = '<div class="card" id="oatToday"><div class="row" style="font-weight:800;font-size:17px"><span>오늘의 OAT</span><span class="sp"></span><button class="linkbtn small" data-act="tab" data-tab="oat">전체 보기 ›</button></div>';
+  if(prep) h += '<div class="note" style="margin:10px 0 0"><div class="tiny muted">🌙 어젯밤 정한 오늘 준비</div><div style="font-weight:700;margin-top:2px">'+esc(prep)+'</div></div>';
+  h += '<div class="oatgrid">';
+  var tile = function(cls, act, g, on, sub){ return '<button class="'+cls+(on?" on":"")+'" data-act="'+act+'" data-id="'+g.id+'"><span class="ck">'+(on?"✓":"")+'</span><span class="nm">'+esc(g.title)+(sub?'<span class="sb2">'+esc(sub)+'</span>':'')+'</span></button>'; };
   items.forEach(function(x){
     var on = goalDoneOn(x.g, t);
-    if(x.auto) h += '<button class="'+(on?"on":"")+'" style="opacity:.85" data-act="oatAutoInfo" data-id="'+x.g.id+'">'+(on?"✓ ":"○ ")+esc(x.g.title)+' <span class="tiny">'+(on?"자동":"")+'</span></button>';
-    else if(x.due) h += '<button data-act="oatDueDone" data-id="'+x.g.id+'">☐ '+esc(x.g.title)+' <span class="tiny" style="color:var(--warn)">'+x.sub+'</span></button>';
-    else h += '<button class="'+(on?"on":"")+'" data-act="oatCheck" data-id="'+x.g.id+'">'+(on?"✓ ":"☐ ")+esc(x.g.title)+(x.sub?' <span class="tiny">'+esc(x.sub)+'</span>':'')+'</button>';
+    if(x.auto) h += tile("auto", "oatAutoInfo", x.g, on, on ? "자동 ✓" : "자동으로 표시");
+    else if(x.due) h += tile("due", "oatDueDone", x.g, false, x.sub);
+    else h += tile("", "oatCheck", x.g, on, x.sub);
   });
   return h + '</div></div>';
 }
 function oatHeaderLine(t){
   var head = oatHead(Number(t.slice(0,4))) || oatHead(curOatYear()); if(!head) return "";
   var v = weekVerse(t, head);
-  return '<div class="small" style="margin-top:6px;cursor:pointer" data-act="tab" data-tab="oat">🎯 <span class="muted">'+head.year+' 주제:</span> '+esc(head.theme||"")+(v?' · <span class="muted">이번 주 약속:</span> '+esc(v):'')+'</div>';
+  return '<div class="mline" data-act="tab" data-tab="oat"><span class="mi">🎯</span><div><div class="ml">'+head.year+' 주제'+(v?' · 이번 주 약속 '+esc(v):'')+'</div><div class="mt">'+esc(head.theme||"")+'</div></div></div>';
 }
 function longPraysToday(t){
   var p = oatPrays(Number(t.slice(0,4))).filter(function(x){ return x.status!=="answered"; });
@@ -1834,7 +1966,7 @@ function pepBanner(t){
   var friEve = (d===5 && hr>=18), weekend = (d===6);
   if(!(friEve || weekend)) return "";
   if(!S.oat.length) return "";
-  return '<div class="banner" style="cursor:pointer;border:1.5px solid var(--accent)" data-act="openReview"><b>📒 PEP Time — 이번 주 점검</b><div class="small muted" style="margin-top:2px">15~20분 · 영역별 돌아봄, 성품 질문, 다음 주 집중 하나</div></div>';
+  return '<div class="banner" style="cursor:pointer;border:1.5px solid var(--accent);display:flex;align-items:center;gap:12px" data-act="openReview"><span style="font-size:26px">📒</span><div style="flex:1"><b style="font-size:16.5px">PEP Time · 이번 주 점검</b><div class="small muted" style="margin-top:2px">15~20분 · 돌아봄, 성품, 다음 주 집중 하나</div></div><span style="font-size:22px;color:var(--accent)">›</span></div>';
 }
 function graceLine(t){
   var r = null; S.reviews.forEach(function(x){ if(x.done && x.doneDate && diff(x.doneDate,t)>=1 && diff(x.doneDate,t)<=2) r = x; });
@@ -1847,9 +1979,9 @@ function graceLine(t){
 function renderOat(){
   var y = curOatYear(), head = oatHead(y), t = today(), ys = oatYears();
   if(ys.indexOf(y) < 0) ys.push(y);
-  var h = '<div class="row" style="margin-top:14px"><h2 style="margin:0">🎯 OAT</h2><span class="sp"></span>'+
+  var h = '<div class="row" style="margin-top:18px"><h2 style="margin:0">OAT</h2><span class="sp"></span>'+
     '<select id="oatYearSel" style="width:auto">'+ys.concat([Number(t.slice(0,4))+1]).filter(function(v,i,a){ return a.indexOf(v)===i; }).sort().map(function(v){ return '<option value="'+v+'" '+(v===y?"selected":"")+'>'+v+'</option>'; }).join("")+'</select></div>';
-  h += '<div class="actions"><button class="btn primary" data-act="openReview">📒 이번 주 점검</button><button class="btn" data-act="oatImport">📥 OAT 불러오기</button><button class="btn" data-act="oatExport">📤 내 OAT 보내기</button></div>';
+  h += '<button class="btn primary block" style="margin-top:12px" data-act="openReview">📒 이번 주 점검 (PEP Time)</button><div class="actions" style="margin-top:10px"><button class="btn sm" data-act="oatImport">📥 불러오기</button><button class="btn sm" data-act="oatExport">📤 내 OAT 보내기</button></div>';
   if(!head && !S.oat.some(function(r){ return r.year===y; })){
     return h + '<div class="card"><b>'+y+' OAT가 아직 없습니다</b><p class="small muted">"📥 OAT 불러오기"로 OAT 파일을 넣거나, 아래에서 직접 적어 시작하세요.</p><div class="actions"><button class="btn primary" data-act="oatEditHead">＋ '+y+' OAT 시작</button></div></div>';
   }
@@ -2103,6 +2235,29 @@ $("#oatFileIn").addEventListener("change", function(e){
     closeSheet(); oatImportSheet(d); };
   rd.readAsText(f); e.target.value="";
 });
+
+/* ============ 앱으로 설치 (주소창 없이 열리게) ============
+   크롬 탭에서 열면 위에 주소창이 보인다. 설치된 앱(홈 화면 아이콘)으로 열면 주소창이 없다. */
+var INSTALL = {evt:null};
+window.addEventListener("beforeinstallprompt", function(e){ e.preventDefault(); INSTALL.evt = e; if(UI.tab==="today") render(); });
+window.addEventListener("appinstalled", function(){ INSTALL.evt = null; toast("설치되었습니다. 이제 홈 화면의 '쉬지 않는 기도' 아이콘으로 여세요"); render(); });
+function isStandalone(){ return (window.matchMedia && (matchMedia("(display-mode: standalone)").matches || matchMedia("(display-mode: fullscreen)").matches)) || navigator.standalone === true; }
+function installBar(){
+  if(isStandalone() || !/^https?:$/.test(location.protocol)) return "";
+  var later = 0; try{ later = Number(localStorage.getItem("swgido.installLater")||0); }catch(e){}
+  if(later && Date.now() < later) return "";
+  return '<div class="installbar"><div style="flex:1"><b>앱으로 설치하기</b>주소창 없이 전체 화면으로 열립니다</div>'+
+    '<button class="btn sm primary" data-act="installApp">설치</button><button class="iconbtn" data-act="installLater" aria-label="나중에" style="width:36px;height:36px;font-size:16px">✕</button></div>';
+}
+ACT.installApp = function(){
+  if(INSTALL.evt){ var e = INSTALL.evt; INSTALL.evt = null; e.prompt(); e.userChoice.then(function(c){ if(c && c.outcome!=="accepted") toast("다음에 다시 설치하실 수 있습니다"); render(); }); return; }
+  var ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  openSheet("앱으로 설치하기", ios
+    ? '<div class="help"><p>1. 사파리 아래쪽의 <b>공유 단추(□↑)</b>를 누릅니다.</p><p>2. <b>홈 화면에 추가</b>를 누르고 <b>추가</b>.</p><p>3. 이제 홈 화면 아이콘으로 여시면 주소창이 없습니다.</p></div>'
+    : '<div class="help"><p>1. 크롬 오른쪽 위 <b>⋮</b> 를 누릅니다.</p><p>2. <b>홈 화면에 추가</b> → <b>설치</b>를 누릅니다.</p><p>3. 홈 화면에 생긴 <b>쉬지 않는 기도</b> 아이콘으로 여시면 주소창 없이 열립니다.</p>'+
+      '<h3>"이미 설치됨"이라고만 나오고 열리지 않으면</h3><p>휴대폰 <b>설정 → 애플리케이션</b>에서 <b>쉬지 않는 기도</b>(또는 쉬지않는기도)를 찾아 <b>삭제</b>한 뒤, 이 화면을 새로고침하고 다시 설치하세요. 기도 기록은 지워지지 않습니다.</p></div>');
+};
+ACT.installLater = function(){ try{ localStorage.setItem("swgido.installLater", String(Date.now()+14*864e5)); }catch(e){} render(); };
 
 load(); if(dedupeGroups()) save(); render(); Sync.onOpen();
 /* 카카오톡 등에서 "공유 → 쉬지 않는 기도"로 들어온 글 */
