@@ -174,13 +174,15 @@ label.f{display:block; font-size:13.5px; color:var(--muted); margin:12px 0 4px; 
   <button data-act="tab" data-tab="people"><span class="i">👥</span>사람</button>
   <button data-act="tab" data-tab="words"><span class="i">📖</span>말씀</button>
   <button data-act="tab" data-tab="answers"><span class="i">🌿</span>응답</button>
+  <button data-act="tab" data-tab="oat"><span class="i">🎯</span>OAT</button>
 </div></nav>
 <input type="file" id="fileIn" accept=".json,.txt,application/json,text/plain" hidden>
 <input type="file" id="vcfIn" hidden>
+<input type="file" id="oatFileIn" accept=".txt,.json,text/plain,application/json" hidden>
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-09-3";
+var APP_VERSION = "2026-11-10-1";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -227,7 +229,7 @@ function load(){
   var d = defaultState();
   S.settings = Object.assign({}, d.settings, S.settings||{});
   S.settings.tpl = Object.assign({}, d.settings.tpl, S.settings.tpl||{});
-  ["people","items","notes","groups","promises"].forEach(function(k){ if(!Array.isArray(S[k])) S[k]=[]; });
+  ["people","items","notes","groups","promises","oat","reviews"].forEach(function(k){ if(!Array.isArray(S[k])) S[k]=[]; });
   if(!S.logs) S.logs = {};
   if(!S.tomb) S.tomb = {};
   S.notes.forEach(function(n){ if(n.source==="주일설교") n.source="주일 메시지"; });
@@ -236,7 +238,7 @@ function load(){
 }
 /* ---- 고친 시각 기록 (기기 간 합치기용) ----
    저장할 때마다 이전 저장과 비교해 바뀐 기록에 mt(고친 시각)를 찍고, 사라진 기록은 tomb(지운 기록)에 남긴다. */
-var KINDS = ["groups","people","items","notes","promises"];
+var KINDS = ["groups","people","items","notes","promises","oat","reviews"];
 var LOCAL_SETTINGS = ["theme","short","lastBackup","sync","started"];
 var SNAP = null;
 function recJson(r){ var o={}; Object.keys(r).forEach(function(k){ if(k!=="mt") o[k]=r[k]; }); return JSON.stringify(o); }
@@ -293,6 +295,7 @@ function mergeInto(R){
     L.prayed = uniq((a.prayed||[]).concat(b.prayed||[]));
     L.steps = Object.assign({}, older.steps||{}, newer.steps||{});
     L.done = !!(a.done || b.done);
+    if(a.oat || b.oat) L.oat = Object.assign({}, older.oat||{}, newer.oat||{});
     ["praiseMemo","confess","evening"].forEach(function(f){ if(!L[f] && older[f]) L[f]=older[f]; });
     L.thanks = (newer.thanks||[]).map(function(x,i){ return x || (older.thanks||[])[i] || ""; });
     (older.thanks||[]).slice((newer.thanks||[]).length).forEach(function(x){ L.thanks.push(x); });
@@ -321,7 +324,7 @@ function dedupeGroups(){
   S.groups = S.groups.filter(function(g){ return !drop[g.id]; });
   return true;
 }
-function sharedState(){ var st={}; Object.keys(S.settings).forEach(function(k){ if(LOCAL_SETTINGS.indexOf(k)<0) st[k]=S.settings[k]; }); return {v:1, app:"swgido", groups:S.groups, people:S.people, items:S.items, notes:S.notes, promises:S.promises, logs:S.logs, tomb:S.tomb, settings:st}; }
+function sharedState(){ var st={}; Object.keys(S.settings).forEach(function(k){ if(LOCAL_SETTINGS.indexOf(k)<0) st[k]=S.settings[k]; }); return {v:1, app:"swgido", groups:S.groups, people:S.people, items:S.items, notes:S.notes, promises:S.promises, oat:S.oat, reviews:S.reviews, logs:S.logs, tomb:S.tomb, settings:st}; }
 function log(d){ if(!S.logs[d]) S.logs[d] = {steps:{}, thanks:["","",""], prayed:[], praiseMemo:"", confess:""}; var L=S.logs[d]; if(!L.steps) L.steps={}; if(!L.thanks) L.thanks=["","",""]; if(!L.prayed) L.prayed=[]; return L; }
 
 /* ============ 조회 ============ */
@@ -507,7 +510,7 @@ var UI = {tab:"today", open:null, peopleView:"day"};
 function render(){
   document.querySelectorAll("nav.bottom button").forEach(function(b){ b.classList.toggle("on", b.dataset.tab===UI.tab); });
   document.documentElement.classList.toggle("light", S.settings.theme==="light");
-  var fn = {today:renderToday, people:renderPeople, words:renderWords, answers:renderAnswers}[UI.tab];
+  var fn = {today:renderToday, people:renderPeople, words:renderWords, answers:renderAnswers, oat:renderOat}[UI.tab];
   $("#main").innerHTML = fn();
 }
 
@@ -532,9 +535,10 @@ function renderToday(){
   var h = '<div class="dayhead"><div class="row"><div class="date">'+fmtDate(t)+' '+DOW[dow(t)]+'요일</div><span class="sp"></span>'+
     '<div class="seg" style="width:auto"><button data-act="setShort" data-v="0" class="'+(short?"":"on")+'">전체</button><button data-act="setShort" data-v="1" class="'+(short?"on":"")+'">짧은 기도</button></div></div>'+
     '<div class="sub">기도하기를 쉬는 죄를 범치 아니하고 (삼상 12:23) · 이번 주 '+wd.n+'/7일</div>'+
-    (function(){ var wp=weekPromise(t); return wp ? '<div class="small" style="margin-top:6px;cursor:pointer" data-act="openPromise" data-id="'+wp.id+'">'+PKIND[wp.kind].icon+' <span class="muted">이번 주 '+PKIND[wp.kind].name+':</span> '+promiseLine(wp)+'</div>' : ''; })()+
+    (function(){ var wp=weekPromise(t); return wp ? '<div class="small" style="margin-top:6px;cursor:pointer" data-act="openPromise" data-id="'+wp.id+'">'+PKIND[wp.kind].icon+' <span class="muted">이번 주 '+PKIND[wp.kind].name+':</span> '+promiseLine(wp)+'</div>' : ''; })()+oatHeaderLine(t)+
     '<div class="weekdots">'+wd.cells+'</div></div>';
   promiseAnniv(t).forEach(function(a){ var x=a.x; h += '<div class="banner" style="cursor:pointer" data-act="openPromise" data-id="'+x.id+'">'+PKIND[x.kind].icon+' <b>'+a.yrs+'년 전 오늘</b> ('+esc(x.date)+') — '+(x.kind==="memorial"?esc(x.text):(x.kind==="promise"?'이 약속을 붙드셨습니다: ':'이 말씀을 붙드셨습니다: ')+promiseLine(x))+(x.context?'<div class="tiny muted" style="margin-top:2px">'+esc(x.context)+'</div>':'')+'<div class="tiny muted" style="margin-top:2px">감사 기도로 올려 드리세요</div></div>'; });
+  h += pepBanner(t) + oatTodayCard(t);
   if(!S.people.length && !S.items.length) h += welcomeCard();
   var steps = short ? STEPS.filter(function(s){ return s[0]==="praise"||s[0]==="thanks"||s[0]==="intercede"; }) : STEPS;
   var wide = isWide();
@@ -558,6 +562,7 @@ function renderToday(){
       '<div class="small muted">오늘 하루를 주님 앞에서 돌아봅니다. 적은 것은 내일 아침 감사·자백 기도로 이어집니다.</div>'+
       '<label class="f">오늘 감사한 일 하나</label><input type="text" data-log="evening.thanks" value="'+esc(ev.thanks||"")+'">'+
       '<label class="f">오늘 고칠 것 하나</label><input type="text" data-log="evening.fix" value="'+esc(ev.fix||"")+'">'+
+      '<label class="f">내일 준비 하나 <span class="tiny muted">(저녁 = 내일 준비 · 내일 아침 화면에 뜹니다)</span></label><input type="text" data-log="evening.tomorrow" value="'+esc(ev.tomorrow||"")+'">'+
       '<div class="actions"><button class="btn '+(ev.done?'':'primary')+' block" data-act="eveningDone">'+(ev.done?'저장됨 ✓ (고치면 다시 누르기)':'돌아보기 마침')+'</button></div></div></div>';
   } else if(S.settings.evening!==false){
     h += '<div style="text-align:center;margin:6px 0"><button class="linkbtn small" data-act="showEvening">🌙 저녁 돌아보기 열기</button></div>';
@@ -601,6 +606,7 @@ var STEP_BODY = {
     var h = ans.length ? '<div class="small muted">최근 응답하신 일</div>' + ans.map(function(it){ var pp=person(it.personId); return '<div class="note" data-act="openItem" data-id="'+it.id+'"><div class="row"><span class="chip good">🌿 '+(it.status==="other"?"다르게 응답":"응답")+'</span><span class="tiny muted">'+(pp?esc(pp.name):(it.personId==="me"?"나":""))+' · '+daysTxt(it)+'</span></div><div class="ap">'+esc(it.title)+'</div>'+(it.answerText?'<div class="small">'+esc(it.answerText)+'</div>':'')+'</div>'; }).join("") : "";
     var yl = S.logs[addDays(t,-1)], ye = yl && yl.evening;
     if(ye && ye.thanks) h += '<div class="note"><div class="tiny muted">🌙 어젯밤 돌아본 감사</div><div class="ap">'+esc(ye.thanks)+'</div></div>';
+    h += graceLine(t);
     var n = short ? 1 : 3; h += '<label class="f">오늘 감사 '+n+'가지</label>';
     for(var i=0;i<n;i++) h += '<input type="text" data-log="thanks.'+i+'" value="'+esc(L.thanks[i]||"")+'" placeholder="'+(i+1)+'." style="margin-bottom:6px">';
     var extra = L.thanks.slice(3).filter(Boolean); if(extra.length) h += extra.map(function(x){ return '<div class="small">• '+esc(x)+'</div>'; }).join("");
@@ -612,6 +618,7 @@ var STEP_BODY = {
     var h = pk ? '<div class="note" style="border-color:var(--accent)"><div class="tiny muted">이번 주 붙잡을 한 가지</div><div class="ap">'+esc(pk.apply)+'</div><div class="tiny muted">"이 결심을 지키게 하소서"'+(pk.ref?' · '+esc(pk.ref):'')+'</div></div>' : "";
     h += mine.length ? '<div class="pcard"><ul class="items">'+mine.map(function(it){ return '<li data-act="openItem" data-id="'+it.id+'">'+(it.focus?'<span class="chip new">이번 주</span> ':'')+esc(it.title)+(it.due?' <span class="chip warn">'+fmtDate(it.due)+'</span>':'')+'</li>'; }).join("")+'</ul></div>'
       : '<div class="empty">나의 기도제목이 아직 없습니다.</div>';
+    h += oatPersonalHtml(t);
     return h + '<div class="actions"><button class="btn sm" data-act="quickAdd" data-pid="me">＋ 나의 기도제목</button></div>';
   },
   intercede:function(t,L,p,short){
@@ -651,13 +658,17 @@ function pcard(p, L, sp){
   if(!p) return "";
   var its = activeItemsOf(p.id).sort(function(a,b){ return (b.urgent?1:0)-(a.urgent?1:0) || (a.created<b.created?1:-1); });
   var prayed = L.prayed.indexOf(p.id)>=0, t=today();
+  var oatIts = its.filter(function(x){ return x.oatTag; }), oatMore = 0;
+  if(oatIts.length > 3){ var rot = (p.circle==="daily" ? dayNum(t) : Math.floor(dayNum(t)/7))*3, keep = {}; for(var oi=0; oi<3; oi++) keep[oatIts[(rot+oi) % oatIts.length].id] = 1; oatMore = oatIts.length-3; its = its.filter(function(x){ return !x.oatTag || keep[x.id]; }); }
   var ptags = sp ? Object.keys(sp.tags) : [];
   var stale = p.circle!=="daily" && its.length && its.every(function(it){ return diff(it.updated||it.created,t)>30; }) && (!p.lastContact || diff(p.lastContact,t)>30);
   var tel = p.phone ? 'href="tel:'+esc(p.phone.replace(/[^\d+]/g,""))+'" data-act="contacted" data-id="'+p.id+'"' : 'data-act="openPerson" data-id="'+p.id+'"';
   return '<div class="pcard '+(prayed?"prayed":"")+'"><div class="row"><span class="dot" style="background:'+gColor(p.groupId)+'"></span><span class="pn" data-act="openPerson" data-id="'+p.id+'">'+esc(p.name)+'</span>'+
     (p.groupId?'<span class="chip">'+esc(gName(p.groupId))+'</span>':'')+ptags.map(function(x){ return '<span class="chip warn">'+x+'</span>'; }).join("")+(stale?'<span class="chip warn">근황 묻기</span>':'')+'<span class="sp"></span>'+
     '<a class="cbtn '+(p.phone?"":"off")+'" '+tel+' aria-label="전화">📞</a><button class="cbtn" data-act="msg" data-id="'+p.id+'" aria-label="메시지">💬</button></div>'+
+    (function(){ var og=oatGoalPeople(p.id); return og.length ? '<div class="tiny" style="margin-top:4px">'+og.map(function(x){ return '<div data-act="oatOpen" data-id="'+x.g.id+'" style="cursor:pointer">🎯 <span class="muted">'+esc(x.g.title)+'</span>'+(x.note?' · '+esc(x.note):'')+'</div>'; }).join("")+'</div>' : ''; })()+
     (its.length?'<ul class="items">'+its.map(function(it){ return itemLine(it, sp && sp.items[it.id]); }).join("")+'</ul>':'<div class="tiny muted" style="margin-top:4px">기도제목 없음 · <button class="linkbtn" data-act="quickAdd" data-pid="'+p.id+'">＋ 추가</button></div>')+
+    (oatMore?'<div class="tiny muted" style="margin:2px 0 0 4px">OAT 기도제목 '+oatMore+'개는 다음 차례에 · <button class="linkbtn tiny" data-act="openPerson" data-id="'+p.id+'">전체 보기</button></div>':'')+
     '<button class="praybtn" data-act="pray" data-id="'+p.id+'">'+(prayed?"기도했어요 ✓":"✓ 기도했어요")+'</button></div>';
 }
 function inboxCard(e){
@@ -1665,6 +1676,429 @@ if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){
   window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); });
 }
 if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function(){});
+
+
+/* ============ OAT (Objectives · Activities · Timetable) ============
+   S.oat: 해마다의 머리(year), 장기기도제목(pray), 목표(goal) 기록
+   S.reviews: 주간 점검(PEP Time) 기록 — id "rv-주의 시작일"
+   logs[날짜].oat: {목표 id: true} — 그날 체크한 활동 */
+var AREAS = [["basic","Basic"],["ministry","Ministry"],["character","Character"],["personal","Personal Life"],["others","Others"]];
+var CHECKS = [["daily","매일 체크"],["week","주 몇 회"],["dow","정한 요일"],["month","한 달에 한 번"],["auto","자동 (다른 기록에서)"],["count","숫자 목표"],["due","기한 있는 일"],["reflect","주간 점검에서 돌아봄"],["none","상기만"]];
+var AUTOSRC = [["read","성경 통독 (성경읽기 앱)"],["memory","암송 복습 (암송 앱)"],["pray","오늘 기도 마침 (이 앱)"],["thanks","감사 기록 (이 앱)"],["contact","연락·교제 (이 앱)"],["review","금요일 점검 (이 앱)"]];
+var AREA_NAME = {}; AREAS.forEach(function(a){ AREA_NAME[a[0]] = a[1]; });
+var CHECK_NAME = {}; CHECKS.forEach(function(c){ CHECK_NAME[c[0]] = c[1]; });
+
+function oatYears(){ var ys = {}; S.oat.forEach(function(r){ ys[r.year] = 1; }); return Object.keys(ys).map(Number).sort(); }
+function curOatYear(){
+  if(UI.oatYear) return UI.oatYear;
+  var y = Number(today().slice(0,4)), ys = oatYears();
+  if(ys.indexOf(y) >= 0) return y;
+  var past = ys.filter(function(x){ return x <= y; }); return past.length ? past[past.length-1] : y;
+}
+function oatHead(y){ return S.oat.filter(function(r){ return r.kind==="year" && r.year===y; })[0] || null; }
+function oatPrays(y){ return S.oat.filter(function(r){ return r.kind==="pray" && r.year===y; }).sort(function(a,b){ return (a.order||0)-(b.order||0); }); }
+function oatGoals(y, area){ return S.oat.filter(function(r){ return r.kind==="goal" && r.year===y && (!area || r.area===area); }).sort(function(a,b){ return (a.order||0)-(b.order||0); }); }
+function oatRec(id){ for(var i=0;i<S.oat.length;i++) if(S.oat[i].id===id) return S.oat[i]; return null; }
+function splitVerses(s){ return String(s||"").split(/\s*[,，·;]\s*(?=[가-힣])/).map(function(x){ return x.trim(); }).filter(Boolean); }
+function weekVerse(t, head){ var v = splitVerses(head && head.verses); return v.length ? v[Math.floor(dayNum(weekStart(t))/7) % v.length] : ""; }
+
+/* ---- 다른 앱 기록 읽기 (같은 주소 limbyungsung-medi.github.io 아래라 같은 휴대폰이면 읽을 수 있음) ---- */
+function lsJson(k){ try{ return JSON.parse(localStorage.getItem(k) || "null"); }catch(e){ return null; } }
+function bibleReadOn(d){ var m = lsJson("bible_readdates_v1"); return !!(m && m[d]); }
+function bibleProgress(){ var m = lsJson("bible_read_v1"); if(!m) return null; var n = Object.keys(m).filter(function(k){ return m[k]; }).length; return {n:n, pct:Math.round(n/1189*1000)/10}; }
+function memoryOn(d){ var s = lsJson("malsseum-amsong-v1"); var l = s && s.log && s.log[d]; return l ? (l.rev||0) + ((l.newIds||[]).length) : 0; }
+function memoryTotal(){ var s = lsJson("malsseum-amsong-v1"); return s && s.mylist ? s.mylist.length : null; }
+function contactedOn(d){ return S.people.filter(function(p){ return p.lastContact===d; }).length; }
+function thanksOn(d){ var L = S.logs[d]; if(!L) return 0; return (L.thanks||[]).filter(function(x){ return x && x.trim(); }).length + (L.evening && L.evening.thanks ? 1 : 0); }
+function reviewOf(wk){ for(var i=0;i<S.reviews.length;i++) if(S.reviews[i].id==="rv-"+wk) return S.reviews[i]; return null; }
+
+/* 그날 목표가 이루어졌나 */
+function goalDoneOn(g, d){
+  var c = g.check || {};
+  if(c.t==="auto"){
+    if(c.src==="read") return bibleReadOn(d);
+    if(c.src==="memory") return memoryOn(d) > 0;
+    if(c.src==="pray") return !!(S.logs[d] && S.logs[d].done);
+    if(c.src==="thanks") return thanksOn(d) > 0;
+    if(c.src==="contact") return contactedOn(d) > 0;
+    if(c.src==="review"){ var r = reviewOf(weekStart(d)); return !!(r && r.done && r.doneDate===d); }
+    return false;
+  }
+  return !!(S.logs[d] && S.logs[d].oat && S.logs[d].oat[g.id]);
+}
+function countRange(g, from, to){ var n = 0; for(var d = from; d <= to; d = addDays(d,1)) if(goalDoneOn(g, d)) n++; return n; }
+function weekCount(g, t){ return countRange(g, weekStart(t), t); }
+function monthDone(g, t){ return countRange(g, t.slice(0,8)+"01", t) > 0; }
+function goalProgressText(g, t){
+  var c = g.check || {};
+  if(c.t==="daily") return "이번 주 "+weekCount(g,t)+"/"+(dow(t)+1)+"일";
+  if(c.t==="week") return "이번 주 "+weekCount(g,t)+"/"+(c.n||1)+"회";
+  if(c.t==="dow") return DOW[c.dow||0]+"요일마다 · "+(weekCount(g,t)?"이번 주 ✓":"이번 주 아직");
+  if(c.t==="month") return monthDone(g,t) ? "이번 달 ✓" : "이번 달 아직";
+  if(c.t==="count") return (c.count||0)+" / "+(c.target||1);
+  if(c.t==="due") return c.done ? "마침 ✓" : (c.due ? fmtDate(c.due)+"까지" : "기한 없음");
+  if(c.t==="auto"){
+    if(c.src==="read"){ var bp = bibleProgress(); return (bp ? "통독 "+bp.n+"/1189장 ("+bp.pct+"%) · " : "") + "이번 주 "+weekCount(g,t)+"일"; }
+    if(c.src==="memory"){ var mt = memoryTotal(); return (mt!=null ? "내 암송 "+mt+"구절 · " : "") + "이번 주 복습 "+weekCount(g,t)+"일"; }
+    return "이번 주 "+weekCount(g,t)+"일";
+  }
+  if(c.t==="reflect") return "금요일 점검에서";
+  return "";
+}
+function oatGoalPeople(pid){
+  var y = curOatYear(), out = [];
+  oatGoals(y).forEach(function(g){ (g.people||[]).forEach(function(x){ if(x.pid===pid) out.push({g:g, note:x.note}); }); });
+  return out;
+}
+function linkPeopleNames(list){
+  return (list||[]).map(function(x){
+    var name = String(x.name||"").trim(); if(!name) return null;
+    var pid = x.pid && person(x.pid) ? x.pid : null;
+    if(!pid){
+      var exact = S.people.filter(function(p){ return p.name.replace(/\s/g,"")===name.replace(/\s/g,""); });
+      if(exact.length===1) pid = exact[0].id;
+      else if(name.length>=2){ var part = S.people.filter(function(p){ return p.name.indexOf(name)>=0 || (p.name.length>=2 && name.indexOf(p.name)>=0); }); if(part.length===1) pid = part[0].id; }
+    }
+    return {name:name, pid:pid, note:x.note||""};
+  }).filter(Boolean);
+}
+function peopleToText(list){ return (list||[]).map(function(x){ return x.name+(x.note?": "+x.note:""); }).join("\n"); }
+function textToPeople(txt){
+  return String(txt||"").split(/\n/).map(function(l){ l=l.trim(); if(!l) return null; var m=/^([^:：]+)[:：]\s*(.*)$/.exec(l); return m ? {name:m[1].trim(), note:m[2].trim()} : {name:l, note:""}; }).filter(Boolean)
+    .reduce(function(acc, x){ x.name.split(/\s*,\s*/).forEach(function(n){ if(n) acc.push({name:n, note:x.note}); }); return acc; }, []);
+}
+
+/* ---------- 오늘 화면에 들어가는 것 ---------- */
+function oatTodayItems(t){
+  var y = Number(t.slice(0,4)), goals = oatGoals(y).length ? oatGoals(y) : oatGoals(curOatYear()), out = [];
+  goals.forEach(function(g){
+    var c = g.check || {};
+    if(c.t==="daily") out.push({g:g, sub:""});
+    else if(c.t==="week"){ var k = weekCount(g,t); if(k < (c.n||1) || goalDoneOn(g,t)) out.push({g:g, sub:k+"/"+(c.n||1)}); }
+    else if(c.t==="dow" && dow(t)===(c.dow||0)) out.push({g:g, sub:DOW[c.dow||0]+"요일"});
+    else if(c.t==="month" && (!monthDone(g,t) || goalDoneOn(g,t))) out.push({g:g, sub:"이번 달"});
+    else if(c.t==="due" && !c.done && c.due && diff(t, c.due) <= 14) out.push({g:g, sub:(diff(t,c.due)<0?"기한 지남":"D-"+diff(t,c.due)), due:true});
+    else if(c.t==="auto" && ["read","memory","contact"].indexOf(c.src)>=0) out.push({g:g, sub:"자동", auto:true});
+  });
+  return out;
+}
+function oatTodayCard(t){
+  var items = oatTodayItems(t), yl = S.logs[addDays(t,-1)], prep = yl && yl.evening && yl.evening.tomorrow;
+  if(!items.length && !prep) return "";
+  var h = '<div class="card" id="oatToday" style="padding:12px 14px"><div class="row" style="font-weight:800"><span>🎯 오늘의 OAT</span><span class="sp"></span><button class="linkbtn tiny" data-act="tab" data-tab="oat">OAT 전체 ›</button></div>';
+  if(prep) h += '<div class="small" style="margin-top:6px">🌙 어젯밤 정한 오늘 준비: <b>'+esc(prep)+'</b></div>';
+  h += '<div class="namechips" style="margin-top:8px">';
+  items.forEach(function(x){
+    var on = goalDoneOn(x.g, t);
+    if(x.auto) h += '<button class="'+(on?"on":"")+'" style="opacity:.85" data-act="oatAutoInfo" data-id="'+x.g.id+'">'+(on?"✓ ":"○ ")+esc(x.g.title)+' <span class="tiny">'+(on?"자동":"")+'</span></button>';
+    else if(x.due) h += '<button data-act="oatDueDone" data-id="'+x.g.id+'">☐ '+esc(x.g.title)+' <span class="tiny" style="color:var(--warn)">'+x.sub+'</span></button>';
+    else h += '<button class="'+(on?"on":"")+'" data-act="oatCheck" data-id="'+x.g.id+'">'+(on?"✓ ":"☐ ")+esc(x.g.title)+(x.sub?' <span class="tiny">'+esc(x.sub)+'</span>':'')+'</button>';
+  });
+  return h + '</div></div>';
+}
+function oatHeaderLine(t){
+  var head = oatHead(Number(t.slice(0,4))) || oatHead(curOatYear()); if(!head) return "";
+  var v = weekVerse(t, head);
+  return '<div class="small" style="margin-top:6px;cursor:pointer" data-act="tab" data-tab="oat">🎯 <span class="muted">'+head.year+' 주제:</span> '+esc(head.theme||"")+(v?' · <span class="muted">이번 주 약속:</span> '+esc(v):'')+'</div>';
+}
+function longPraysToday(t){
+  var p = oatPrays(Number(t.slice(0,4))).filter(function(x){ return x.status!=="answered"; });
+  if(!p.length) p = oatPrays(curOatYear()).filter(function(x){ return x.status!=="answered"; });
+  if(!p.length) return [];
+  var i = (dayNum(t)*2) % p.length, out = [p[i]];
+  if(p.length > 1) out.push(p[(i+1) % p.length]);
+  return out;
+}
+function oatPersonalHtml(t){
+  var h = "", lp = longPraysToday(t);
+  var rv = latestFocusReview(t);
+  if(rv && rv.focus) h += '<div class="note" style="border-color:var(--accent)"><div class="tiny muted">📒 PEP Time에서 정한 이번 주 집중</div><div class="ap">'+esc(rv.focus)+'</div></div>';
+  if(lp.length){
+    var all = oatPrays(curOatYear()).filter(function(x){ return x.status!=="answered"; });
+    h += '<div class="small muted" style="margin-top:6px">🎯 장기기도제목 · 오늘 차례 ('+all.length+'가지 중)</div><div class="pcard"><ul class="items">'+lp.map(function(x){ return '<li data-act="oatOpen" data-id="'+x.id+'">'+esc(x.text)+(x.ref?' <span class="chip">'+esc(x.ref)+'</span>':'')+'</li>'; }).join("")+'</ul></div>';
+  }
+  return h;
+}
+function latestFocusReview(t){
+  var best = null;
+  S.reviews.forEach(function(r){ if(r.done && r.focus && r.doneDate && r.doneDate < t && diff(r.doneDate, t) <= 9){ if(!best || r.doneDate > best.doneDate) best = r; } });
+  return best;
+}
+function pepBanner(t){
+  var hr = new Date().getHours(), d = dow(t), r = reviewOf(weekStart(t));
+  if(r && r.done) return "";
+  var friEve = (d===5 && hr>=18), weekend = (d===6);
+  if(!(friEve || weekend)) return "";
+  if(!S.oat.length) return "";
+  return '<div class="banner" style="cursor:pointer;border:1.5px solid var(--accent)" data-act="openReview"><b>📒 PEP Time — 이번 주 점검</b><div class="small muted" style="margin-top:2px">15~20분 · 영역별 돌아봄, 성품 질문, 다음 주 집중 하나</div></div>';
+}
+function graceLine(t){
+  var r = null; S.reviews.forEach(function(x){ if(x.done && x.doneDate && diff(x.doneDate,t)>=1 && diff(x.doneDate,t)<=2) r = x; });
+  if(!r || !r.areas) return "";
+  var good = AREAS.filter(function(a){ return r.areas[a[0]]==="good"; }).map(function(a){ return a[1]; });
+  return good.length ? '<div class="note"><div class="tiny muted">📒 이번 주 주신 은혜 (PEP Time)</div><div class="ap">'+good.join(" · ")+'</div></div>' : "";
+}
+
+/* ---------- OAT 탭 ---------- */
+function renderOat(){
+  var y = curOatYear(), head = oatHead(y), t = today(), ys = oatYears();
+  if(ys.indexOf(y) < 0) ys.push(y);
+  var h = '<div class="row" style="margin-top:14px"><h2 style="margin:0">🎯 OAT</h2><span class="sp"></span>'+
+    '<select id="oatYearSel" style="width:auto">'+ys.concat([Number(t.slice(0,4))+1]).filter(function(v,i,a){ return a.indexOf(v)===i; }).sort().map(function(v){ return '<option value="'+v+'" '+(v===y?"selected":"")+'>'+v+'</option>'; }).join("")+'</select></div>';
+  h += '<div class="actions"><button class="btn primary" data-act="openReview">📒 이번 주 점검</button><button class="btn" data-act="oatImport">📥 OAT 불러오기</button><button class="btn" data-act="oatExport">📤 내 OAT 보내기</button></div>';
+  if(!head && !S.oat.some(function(r){ return r.year===y; })){
+    return h + '<div class="card"><b>'+y+' OAT가 아직 없습니다</b><p class="small muted">"📥 OAT 불러오기"로 OAT 파일을 넣거나, 아래에서 직접 적어 시작하세요.</p><div class="actions"><button class="btn primary" data-act="oatEditHead">＋ '+y+' OAT 시작</button></div></div>';
+  }
+  h += '<div class="card" style="cursor:pointer" data-act="oatEditHead"><div class="tiny muted">'+y+' 주제</div><div style="font-size:18px;font-weight:800">'+esc(head && head.theme || "(주제 적기)")+'</div>'+
+    (head && head.verses ? '<div class="small" style="margin-top:6px"><span class="muted">약속의 말씀</span> '+splitVerses(head.verses).map(function(v){ return '<span class="chip" style="margin:2px">'+esc(v)+'</span>'; }).join("")+'</div>' : '')+
+    (head && head.emphasis ? '<div class="small" style="margin-top:4px"><span class="muted">강조사항</span> '+esc(head.emphasis)+'</div>' : '')+
+    (head && head.motto ? '<div class="small muted" style="margin-top:6px">"'+esc(head.motto)+'"</div>' : '')+'</div>';
+  var prays = oatPrays(y);
+  h += '<h3>장기기도제목 '+prays.length+' <span class="tiny muted" style="font-weight:500">· 매일 2가지씩 돌아가며 개인 기도에</span></h3>';
+  h += prays.length ? '<div class="card list" style="padding:4px 14px">'+prays.map(function(x, i){ return '<div class="li" data-act="oatOpen" data-id="'+x.id+'"><b style="min-width:20px">'+(i+1)+'.</b><div style="flex:1">'+esc(x.text)+(x.ref?' <span class="tiny muted">('+esc(x.ref)+')</span>':'')+(x.status==="answered"?'<div class="tiny" style="color:var(--good)">🌿 '+esc(x.answerDate||"")+' 응답'+(x.answerText?': '+esc(x.answerText):'')+'</div>':'')+'</div></div>'; }).join("")+'</div>' : '';
+  h += '<div class="actions" style="margin-top:4px"><button class="btn sm" data-act="oatNewPray">＋ 장기기도제목</button></div>';
+  AREAS.forEach(function(a){
+    var gs = oatGoals(y, a[0]);
+    h += '<h3>★ '+a[1]+'</h3>';
+    h += gs.length ? '<div class="ngrid">'+gs.map(function(g){ return goalCard(g, t); }).join("")+'</div>' : '<div class="empty">아직 없습니다.</div>';
+    h += '<div class="actions" style="margin-top:4px"><button class="btn sm" data-act="oatNewGoal" data-area="'+a[0]+'">＋ '+a[1]+' 목표</button></div>';
+  });
+  var rvs = S.reviews.filter(function(r){ return r.done; }).sort(function(a,b){ return a.week<b.week?1:-1; }).slice(0,6);
+  if(rvs.length) h += '<h3>지난 점검</h3><div class="card list" style="padding:4px 14px">'+rvs.map(function(r){ return '<div class="li" data-act="openReview" data-week="'+r.week+'"><div style="flex:1"><div class="tiny muted">'+fmtDate(r.week)+' 주 · '+(r.doneDate?fmtDate(r.doneDate)+' 점검':'')+'</div><div>'+AREAS.map(function(a){ var v=r.areas&&r.areas[a[0]]; return v ? ({good:"🌿",ok:"🟡",bad:"🍂"}[v]) : "·"; }).join(" ")+(r.focus?' · 집중: '+esc(r.focus):'')+'</div></div></div>'; }).join("")+'</div>';
+  return h + '<div style="height:24px"></div>';
+}
+function goalCard(g, t){
+  var c = g.check || {}, ppl = g.people || [];
+  return '<div class="note" data-act="oatOpen" data-id="'+g.id+'"><div class="ap" style="margin-top:0">'+esc(g.title)+(g.ref?' <span class="chip">'+esc(g.ref)+'</span>':'')+'</div>'+
+    (g.detail ? '<div class="small" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">'+esc(g.detail)+'</div>' : '')+
+    (ppl.length ? '<div style="margin-top:4px">'+ppl.map(function(x){ return '<span class="chip" style="margin:2px'+(x.pid?'':';border-style:dashed')+'">'+(x.pid?'👤 ':'')+esc(x.name)+'</span>'; }).join("")+'</div>' : '')+
+    '<div class="row tiny muted" style="margin-top:6px"><span class="chip">'+esc(CHECK_NAME[c.t]||"")+'</span><span>'+esc(goalProgressText(g, t))+'</span></div></div>';
+}
+
+/* ---------- 시트 ---------- */
+function oatHeadSheet(){
+  var y = curOatYear(), h0 = oatHead(y) || {};
+  var h = '<label class="f">해</label><input type="number" id="ohYear" value="'+y+'">'+
+    '<label class="f">주제</label><input type="text" id="ohTheme" value="'+esc(h0.theme||"")+'" placeholder="차고 넘치는 그리스도의 사랑">'+
+    '<label class="f">약속의 말씀 (쉼표로 나눔 · 주마다 하나씩 "오늘" 위에)</label><input type="text" id="ohVerses" value="'+esc(h0.verses||"")+'" placeholder="사 54:1-3, 슥 8:23, 엡 3:19-20">'+
+    '<label class="f">강조사항</label><input type="text" id="ohEmph" value="'+esc(h0.emphasis||"")+'">'+
+    '<label class="f">마무리 말씀 (선택)</label><input type="text" id="ohMotto" value="'+esc(h0.motto||"")+'">'+
+    '<div class="actions"><button class="btn primary" data-act="oatSaveHead">저장</button></div>';
+  openSheet(y+" OAT", h);
+}
+function oatPraySheet(x){
+  var isNew = !x; x = x || {text:"", ref:"", status:"active", answerDate:"", answerText:""};
+  var h = '<label class="f">장기기도제목</label><textarea id="opText">'+esc(x.text)+'</textarea>'+
+    '<label class="f">말씀</label><input type="text" id="opRef" value="'+esc(x.ref)+'" placeholder="요 8:29">'+
+    '<label class="f">상태</label>'+radio("opStatus", [["active","기도 중"],["answered","응답됨"]], x.status)+
+    '<div id="opAnsWrap" style="'+(x.status==="answered"?"":"display:none")+'"><label class="f">응답 날짜</label><input type="date" id="opAnsDate" value="'+esc(x.answerDate||today())+'"><label class="f">어떻게 응답하셨나</label><textarea id="opAnsText">'+esc(x.answerText||"")+'</textarea></div>'+
+    '<div class="actions"><button class="btn primary" data-act="oatSavePray" data-id="'+(x.id||"")+'">저장</button>'+(isNew?'':'<button class="btn danger" data-act="oatDel" data-id="'+x.id+'">삭제</button>')+'</div>';
+  openSheet("장기기도제목", h);
+  RADIO_HOOK.opStatus = function(v){ $("#opAnsWrap").style.display = v==="answered" ? "" : "none"; };
+}
+function oatGoalSheet(g, area){
+  var isNew = !g; g = g || {area:area||"basic", title:"", detail:"", ref:"", check:{t:"daily"}, people:[]};
+  var c = g.check || {t:"daily"};
+  var h = '<label class="f">영역</label><select id="ogArea">'+AREAS.map(function(a){ return '<option value="'+a[0]+'" '+(a[0]===g.area?"selected":"")+'>'+a[1]+'</option>'; }).join("")+'</select>'+
+    '<label class="f">목표 (짧게)</label><input type="text" id="ogTitle" value="'+esc(g.title)+'" placeholder="경건의 시간">'+
+    '<label class="f">내용 · 활동</label><textarea id="ogDetail" style="min-height:90px">'+esc(g.detail)+'</textarea>'+
+    '<label class="f">말씀 (선택)</label><input type="text" id="ogRef" value="'+esc(g.ref||"")+'">'+
+    '<label class="f">어떻게 점검할까요</label><select id="ogCheck">'+CHECKS.map(function(x){ return '<option value="'+x[0]+'" '+(x[0]===c.t?"selected":"")+'>'+x[1]+'</option>'; }).join("")+'</select>'+
+    '<div id="ogOpt" style="margin-top:6px"></div>'+
+    '<label class="f">관련된 사람 (한 줄에 한 사람 · "이름: 기도 내용")</label><textarea id="ogPeople" placeholder="홍길동: 직장, 건강&#10;김형제, 이형제: 말씀으로 세워지도록">'+esc(peopleToText(g.people))+'</textarea>'+
+    '<div class="tiny muted">이름이 사람 카드와 맞으면 그분의 요일 중보 기도에 이 내용이 함께 올라옵니다.</div>'+
+    '<div class="actions"><button class="btn primary" data-act="oatSaveGoal" data-id="'+(g.id||"")+'">저장</button>'+(isNew?'':'<button class="btn danger" data-act="oatDel" data-id="'+g.id+'">삭제</button>')+'</div>';
+  openSheet(isNew ? "새 목표" : g.title, h, function(){
+    var opt = function(){
+      var t = $("#ogCheck").value, o = "";
+      if(t==="week") o = '<label class="f">일주일에 몇 회</label><input type="number" id="ogN" min="1" max="7" value="'+(c.n||3)+'">';
+      else if(t==="dow") o = '<label class="f">요일</label><select id="ogDow">'+DOW.map(function(d,i){ return '<option value="'+i+'" '+((c.dow||0)===i?"selected":"")+'>'+d+'요일</option>'; }).join("")+'</select>';
+      else if(t==="auto") o = '<label class="f">어디서 가져올까요</label><select id="ogSrc">'+AUTOSRC.map(function(x){ return '<option value="'+x[0]+'" '+(c.src===x[0]?"selected":"")+'>'+x[1]+'</option>'; }).join("")+'</select><div class="tiny muted">성경읽기·암송 앱은 같은 휴대폰에서 쓸 때 기록을 읽어 옵니다.</div>';
+      else if(t==="count") o = '<div class="row"><div style="flex:1"><label class="f">목표 숫자</label><input type="number" id="ogTarget" min="1" value="'+(c.target||1)+'"></div><div style="flex:1"><label class="f">지금까지</label><input type="number" id="ogCount" min="0" value="'+(c.count||0)+'"></div></div>';
+      else if(t==="due") o = '<label class="f">기한</label><input type="date" id="ogDue" value="'+esc(c.due||"")+'"><div class="check"><input type="checkbox" id="ogDone" '+(c.done?"checked":"")+'><label for="ogDone">마쳤음</label></div>';
+      $("#ogOpt").innerHTML = o;
+    };
+    $("#ogCheck").addEventListener("change", opt); opt();
+  });
+}
+
+/* ---------- 금요일 PEP Time 주간 점검 ---------- */
+function reviewSheet(week){
+  var t = today(), wk = week || weekStart(t), y = curOatYear();
+  var r = reviewOf(wk) || {id:"rv-"+wk, week:wk, areas:{}, people:{}, character:{}, focus:"", memo:""};
+  var end = week && week !== weekStart(t) ? addDays(wk, 6) : t, from = addDays(end, -6);
+  var goals = oatGoals(y);
+  var days = 0; for(var d = from; d <= end; d = addDays(d,1)) if(S.logs[d] && S.logs[d].done) days++;
+  var thanks = 0; for(d = from; d <= end; d = addDays(d,1)) thanks += thanksOn(d);
+  var answers = S.items.filter(function(it){ return (it.status==="answered"||it.status==="other") && it.answerDate>=from && it.answerDate<=end; }).length;
+  var contacts = S.people.filter(function(p){ return p.lastContact && p.lastContact>=from && p.lastContact<=end; }).length;
+  var stat = function(label, val){ return '<div style="text-align:center;min-width:72px"><b style="font-size:20px">'+val+'</b><div class="tiny muted">'+label+'</div></div>'; };
+  var h = '<div class="tiny muted">'+fmtDate(from)+' ~ '+fmtDate(end)+' · "하나님께서 무엇을 하셨나"부터 봅니다</div>'+
+    '<h3>1. 이번 주 한눈에</h3><div class="card wrapflex" style="justify-content:space-around">'+stat("기도한 날", days+"/7")+stat("감사", thanks)+stat("응답", answers)+stat("교제·연락", contacts+"명")+'</div>';
+  var tracked = goals.filter(function(g){ var c=g.check||{}; return ["daily","week","dow","month","auto"].indexOf(c.t)>=0; });
+  if(tracked.length) h += '<div class="card list" style="padding:4px 14px">'+tracked.map(function(g){ var n = countRange(g, from, end), c = g.check||{}; var goal = c.t==="daily"?7:(c.t==="week"?(c.n||1):(c.t==="dow"||c.t==="month"?1:7)); var w = Math.min(100, Math.round(n/goal*100));
+      return '<div class="li" style="cursor:default;align-items:center"><div style="flex:1">'+esc(g.title)+' <span class="tiny muted">'+esc(AREA_NAME[g.area]||"")+'</span></div><span class="bar" style="max-width:90px"><i style="width:'+w+'%"></i></span><span class="tiny" style="min-width:40px;text-align:right">'+n+(c.t==="auto"?"일":"/"+goal)+'</span></div>'; }).join("")+'</div>';
+  h += '<h3>2. 영역별 돌아봄</h3>' + AREAS.map(function(a){ return '<div class="row" style="margin:6px 0"><span style="min-width:110px;font-weight:700">'+a[1]+'</span>'+radio("rvA_"+a[0], [["good","🌿 잘 됨"],["ok","🟡 보통"],["bad","🍂 못 함"]], r.areas[a[0]]||"")+'</div>'; }).join("");
+  h += '<div class="tiny muted">못 한 것은 이유를 한 단어로만: 바쁨 · 아픔 · 막힘 · 다른 인도하심</div><input type="text" id="rvWhy" value="'+esc(r.why||"")+'" placeholder="(선택)" style="margin-top:4px">';
+  var chars = goals.filter(function(g){ return g.area==="character"; });
+  var wkIdx = Math.floor(dayNum(wk)/7);
+  var ch = chars.length ? chars[wkIdx % chars.length] : null;
+  h += '<h3>3. 성품 질문</h3><div class="small">'+(ch ? '이번 주 <b>'+esc(ch.title)+'</b> — 하나님께서 보여 주신 것은?'+(ch.ref?' <span class="tiny muted">('+esc(ch.ref)+')</span>':'') : '이번 주 주님을 기쁘시게 해 드린 순간은?')+'</div><textarea id="rvChar" style="margin-top:6px">'+esc((r.character||{})[ch?ch.id:"_"]||"")+'</textarea>';
+  var ppl = []; goals.forEach(function(g){ (g.people||[]).forEach(function(x){ var key = x.pid || ("n:"+x.name); if(!ppl.some(function(q){ return q.key===key; })) ppl.push({key:key, name:x.pid&&person(x.pid)?person(x.pid).name:x.name, area:g.title}); }); });
+  if(ppl.length) h += '<h3>4. 사람 점검</h3>' + ppl.map(function(x){ return '<div class="row" style="margin:6px 0;flex-wrap:wrap"><span style="min-width:90px;font-weight:700">'+esc(x.name)+'</span>'+radio("rvP_"+x.key.replace(/[^\w가-힣]/g,"_"), [["met","만남"],["contact","연락"],["pray","기도만"]], r.people[x.key]||"")+'</div>'; }).join("");
+  var prays = oatPrays(y).filter(function(x){ return x.status!=="answered"; });
+  if(prays.length) h += '<h3>5. 장기기도제목 '+prays.length+'가지 — 함께 올려 드리기</h3><div class="card list" style="padding:4px 14px">'+prays.map(function(x, i){ return '<div class="li" data-act="oatOpen" data-id="'+x.id+'"><b>'+(i+1)+'.</b><div style="flex:1">'+esc(x.text)+'</div></div>'; }).join("")+'</div>';
+  h += '<h3>6. 다음 주 집중 한 가지</h3><input type="text" id="rvFocus" value="'+esc(r.focus||"")+'" placeholder="다음 주 내내 개인 기도에 올라옵니다">'+
+    '<label class="f">메모 (선택)</label><textarea id="rvMemo">'+esc(r.memo||"")+'</textarea>'+
+    '<div class="actions"><button class="btn primary block" data-act="saveReview" data-week="'+wk+'">점검 마침</button></div>';
+  openSheet("📒 PEP Time · "+fmtDate(wk)+" 주", h);
+  UI.reviewPeople = ppl; UI.reviewChar = ch ? ch.id : "_";
+}
+
+/* ---------- OAT 파일 보내기 · 불러오기 ---------- */
+function oatExportData(y, owner){
+  var strip = function(r){ var o = JSON.parse(JSON.stringify(r)); delete o.mt; delete o.id; if(o.people) o.people = o.people.map(function(x){ return {name:x.pid&&person(x.pid)?person(x.pid).name:x.name, note:x.note}; }); if(o.check){ delete o.check.count; delete o.check.done; } return o; };
+  return {app:"swgido-oat", v:1, owner:owner||"", year:y, head:oatHead(y)?strip(oatHead(y)):null, prays:oatPrays(y).map(strip), goals:oatGoals(y).map(strip)};
+}
+function parseNumberedText(txt){
+  var lines = String(txt||"").replace(/\r/g,"").split("\n"), items = [], cur = null;
+  lines.forEach(function(l){
+    var m = /^\s*(\d{1,2})\s*[.)]\s*(.+)$/.exec(l);
+    if(m){ cur = {text:m[2].trim()}; items.push(cur); }
+    else if(cur && l.trim()){ cur.text += " " + l.trim(); }
+  });
+  items.forEach(function(x){ var r = /\(([^()]*\d+:\d+[^()]*)\)\s*\.?\s*$/.exec(x.text); if(r){ x.ref = r[1].replace(/\s+/g," ").trim(); x.text = x.text.slice(0, r.index).trim(); } x.text = x.text.replace(/\s+/g," ").replace(/\.$/,"").trim(); if(x.ref) x.ref = x.ref.replace(/^([가-힣]+)\s*(\d)/,"$1 $2"); });
+  return items;
+}
+function oatImportSheet(data){
+  var y = data && data.year || Number(today().slice(0,4));
+  var npray = data ? (data.prays||[]).length : 0, ngoal = data ? (data.goals||[]).length : 0;
+  var h = data ? '<div class="card"><b>'+esc(data.owner||"이름 없음")+' · '+y+' OAT</b><div class="small muted">'+(data.head&&data.head.theme?esc(data.head.theme)+' · ':'')+'장기기도제목 '+npray+'가지 · 목표 '+ngoal+'개</div></div>'
+    : '<div class="small">형제가 보낸 OAT 파일을 고르거나, PDF의 글을 복사해 붙여넣으세요.</div><div class="actions"><button class="btn primary" data-act="oatPickFile">📂 OAT 파일 고르기</button></div>'+
+      '<h3>또는 PDF 글 붙여넣기</h3><div class="tiny muted">"1. … 2. …"처럼 번호 달린 장기기도제목을 그대로 붙여넣으면 번호마다 기도제목으로 나뉩니다.</div><textarea id="oiPaste" style="min-height:120px;margin-top:6px"></textarea><div class="actions"><button class="btn sm" data-act="icPasteBtnOat">📋 붙여넣기</button></div>';
+  h += '<h3>누구의 OAT인가요?</h3>'+radio("oiWho", data ? [["me","내 OAT"],["brother","형제의 OAT"]] : [["brother","형제의 OAT"]], data && !data.owner ? "me" : "brother")+
+    '<div id="oiBroWrap"><label class="f">어느 형제의 사람 카드에 넣을까요</label><select id="oiPerson"><option value="">(고르세요)</option>'+S.people.slice().sort(function(a,b){ return a.name.localeCompare(b.name,"ko"); }).map(function(p){ return '<option value="'+p.id+'" '+(data&&data.owner&&p.name.indexOf(data.owner)>=0?"selected":"")+'>'+esc(p.name)+'</option>'; }).join("")+'</select>'+
+    '<label class="f">해</label><input type="number" id="oiYear" value="'+y+'"><div class="tiny muted">장기기도제목과 주제가 그 형제의 기도제목으로 들어가, 그 형제의 요일에 중보 기도로 올라옵니다. 다시 받으면 같은 해 것은 새 내용으로 바뀌고, 적어 둔 응답 기록은 남습니다.</div></div>'+
+    '<div class="actions"><button class="btn primary block" data-act="oatDoImport">넣기</button></div>';
+  openSheet("OAT 불러오기", h, function(){ $("#oiBroWrap").style.display = radioVal("oiWho")==="brother" ? "" : "none"; });
+  RADIO_HOOK.oiWho = function(v){ $("#oiBroWrap").style.display = v==="brother" ? "" : "none"; };
+  UI.oatImportData = data || null;
+}
+function importMyOat(data){
+  var y = Number(data.year), exists = S.oat.some(function(r){ return r.year===y; });
+  if(exists && !confirm(y+" OAT가 이미 있습니다. 파일 내용으로 바꿀까요? (지금까지의 체크·점검 기록은 남습니다)")) return false;
+  S.oat = S.oat.filter(function(r){ return r.year!==y; });
+  if(data.head) S.oat.push(Object.assign({}, data.head, {id:uid(), kind:"year", year:y}));
+  (data.prays||[]).forEach(function(p, i){ S.oat.push(Object.assign({status:"active"}, p, {id:uid(), kind:"pray", year:y, order:i+1})); });
+  (data.goals||[]).forEach(function(g, i){ var o = Object.assign({}, g, {id:uid(), kind:"goal", year:y, order:i+1}); o.people = linkPeopleNames(g.people); S.oat.push(o); });
+  UI.oatYear = y; save(); return true;
+}
+function importBrotherOat(pid, y, data, pasted){
+  var tag = "OAT "+y, p = person(pid); if(!p) return 0;
+  var keep = {}; S.items.filter(function(it){ return it.personId===pid && it.oatTag===tag; }).forEach(function(it){ keep[it.title] = it; });
+  var rows = [];
+  if(data){ if(data.head && data.head.theme) rows.push({title:y+" 주제: "+data.head.theme, detail:[data.head.verses?("약속의 말씀: "+data.head.verses):"", data.head.emphasis?("강조: "+data.head.emphasis):""].filter(Boolean).join("\n")}); (data.prays||[]).forEach(function(x){ rows.push({title:x.text, verse:x.ref||""}); }); }
+  else (pasted||[]).forEach(function(x){ rows.push({title:x.text, verse:x.ref||""}); });
+  var seen = {};
+  rows.forEach(function(r){
+    seen[r.title] = 1;
+    var ex = keep[r.title];
+    if(ex){ ex.detail = r.detail || ex.detail; ex.verse = r.verse || ex.verse; ex.updated = today(); }
+    else S.items.push({id:uid(), personId:pid, title:r.title, detail:r.detail||"", verse:r.verse||"", source:tag, oatTag:tag, created:today(), updated:today(), due:"", urgent:false, urgentChecked:today(), status:"active", prayed:[], focus:false});
+  });
+  /* 새 OAT에 없는 예전 제목: 응답 기록이 없으면 지우고, 있으면 남김 */
+  S.items = S.items.filter(function(it){ return !(it.personId===pid && it.oatTag===tag && !seen[it.title] && it.status==="active"); });
+  if(p.circle!=="daily" && p.circle!=="weekly"){ /* 한 달 원이면 그대로 */ }
+  save(); return rows.length;
+}
+
+var OAT_ACT = {
+  oatAutoInfo:function(b){ var g=oatRec(b.dataset.id); if(!g) return; var src=(g.check||{}).src; toast({read:"성경읽기 앱에서 장을 읽음으로 표시하면 자동으로 ✓",memory:"암송 앱에서 복습하면 자동으로 ✓",pray:"오늘 기도 마침을 누르면 ✓",thanks:"감사를 적으면 ✓",contact:"전화·문자·카톡 버튼으로 연락하면 ✓"}[src]||"자동으로 표시됩니다"); },
+  oatCheck:function(b){ var t=today(), L=log(t); L.oat = L.oat || {}; if(L.oat[b.dataset.id]) delete L.oat[b.dataset.id]; else L.oat[b.dataset.id]=true; save(); var y=window.scrollY; render(); window.scrollTo(0,y); },
+  oatDueDone:function(b){ var g=oatRec(b.dataset.id); if(!g) return; g.check.done=true; save(); render(); toast("마쳤습니다 ✓"); },
+  oatOpen:function(b){ var r=oatRec(b.dataset.id); if(!r) return; if(r.kind==="pray") oatPraySheet(r); else if(r.kind==="goal") oatGoalSheet(r); },
+  oatEditHead:function(){ oatHeadSheet(); },
+  oatSaveHead:function(){
+    var y=Number(val("ohYear"))||curOatYear(), h0=oatHead(y);
+    if(!h0){ h0={id:uid(), kind:"year", year:y}; S.oat.push(h0); }
+    h0.theme=val("ohTheme"); h0.verses=val("ohVerses"); h0.emphasis=val("ohEmph"); h0.motto=val("ohMotto");
+    UI.oatYear=y; save(); closeSheet(); render(); toast("저장했습니다");
+  },
+  oatNewPray:function(){ oatPraySheet(null); },
+  oatSavePray:function(b){
+    var text=$("#opText").value.trim(); if(!text) return toast("기도제목을 적어 주세요");
+    var x=b.dataset.id?oatRec(b.dataset.id):null, y=curOatYear();
+    if(!x){ x={id:uid(), kind:"pray", year:y, order:oatPrays(y).length+1}; S.oat.push(x); }
+    var was=x.status;
+    x.text=text; x.ref=val("opRef"); x.status=radioVal("opStatus")||"active";
+    if(x.status==="answered"){ x.answerDate=val("opAnsDate")||today(); x.answerText=$("#opAnsText").value.trim(); }
+    save(); closeSheet(); render(); toast(x.status==="answered"&&was!=="answered"?"응답을 기록했습니다 🌿":"저장했습니다");
+  },
+  oatNewGoal:function(b){ oatGoalSheet(null, b.dataset.area); },
+  oatSaveGoal:function(b){
+    var title=val("ogTitle"); if(!title) return toast("목표를 적어 주세요");
+    var g=b.dataset.id?oatRec(b.dataset.id):null, y=curOatYear();
+    if(!g){ g={id:uid(), kind:"goal", year:y, order:oatGoals(y).length+1}; S.oat.push(g); }
+    var t=$("#ogCheck").value, old=g.check||{};
+    g.area=$("#ogArea").value; g.title=title; g.detail=$("#ogDetail").value.trim(); g.ref=val("ogRef");
+    var c={t:t};
+    if(t==="week") c.n=Math.max(1,Math.min(7,Number(val("ogN"))||1));
+    if(t==="dow") c.dow=Number($("#ogDow").value);
+    if(t==="auto") c.src=$("#ogSrc").value;
+    if(t==="count"){ c.target=Math.max(1,Number(val("ogTarget"))||1); c.count=Math.max(0,Number(val("ogCount"))||0); }
+    if(t==="due"){ c.due=val("ogDue"); c.done=$("#ogDone").checked; }
+    g.check=c;
+    g.people=linkPeopleNames(textToPeople($("#ogPeople").value));
+    save(); closeSheet(); render();
+    var miss=g.people.filter(function(x){ return !x.pid; }).map(function(x){ return x.name; });
+    toast(miss.length ? "저장 · 사람 카드에 없는 이름: "+miss.join(", ") : "저장했습니다");
+  },
+  oatDel:function(b){ if(!confirm("삭제할까요?")) return; S.oat=S.oat.filter(function(r){ return r.id!==b.dataset.id; }); save(); closeSheet(); render(); },
+  openReview:function(b){ reviewSheet(b && b.dataset && b.dataset.week); },
+  saveReview:function(b){
+    var wk=b.dataset.week, r=reviewOf(wk);
+    if(!r){ r={id:"rv-"+wk, week:wk}; S.reviews.push(r); }
+    r.areas={}; AREAS.forEach(function(a){ var v=radioVal("rvA_"+a[0]); if(v) r.areas[a[0]]=v; });
+    r.why=val("rvWhy"); r.character=r.character||{}; r.character[UI.reviewChar]=$("#rvChar").value.trim();
+    r.people={}; (UI.reviewPeople||[]).forEach(function(x){ var v=radioVal("rvP_"+x.key.replace(/[^\w가-힣]/g,"_")); if(v) r.people[x.key]=v; });
+    r.focus=val("rvFocus"); r.memo=$("#rvMemo").value.trim(); r.done=true; r.doneDate=r.doneDate||today();
+    save(); closeSheet(); render(); toast("이번 주 점검을 마쳤습니다. 다음 주도 주님과 함께 🙏");
+  },
+  oatImport:function(){ oatImportSheet(null); },
+  oatPickFile:function(){ $("#oatFileIn").click(); },
+  icPasteBtnOat:function(){ if(!navigator.clipboard||!navigator.clipboard.readText) return toast("입력칸을 길게 눌러 붙여넣기 하세요"); navigator.clipboard.readText().then(function(x){ $("#oiPaste").value=x; }).catch(function(){ toast("입력칸을 길게 눌러 붙여넣기 하세요"); }); },
+  oatDoImport:function(){
+    var data=UI.oatImportData, who=radioVal("oiWho")||"brother";
+    if(who==="me"){ if(!data) return; if(importMyOat(data)){ closeSheet(); UI.tab="oat"; render(); toast(data.year+" OAT를 넣었습니다"); } return; }
+    var pid=$("#oiPerson").value; if(!pid) return toast("형제를 골라 주세요");
+    var y=Number(val("oiYear"))||Number(today().slice(0,4));
+    var pasted = data ? null : parseNumberedText($("#oiPaste") ? $("#oiPaste").value : "");
+    if(!data && !pasted.length) return toast("번호 달린 기도제목을 찾지 못했습니다");
+    var n=importBrotherOat(pid, y, data, pasted); var p=person(pid);
+    closeSheet(); render(); toast(p.name+"님 카드에 기도제목 "+n+"개를 넣었습니다");
+  },
+  oatExport:function(){
+    var y=curOatYear(); if(!S.oat.some(function(r){ return r.year===y; })) return toast("보낼 OAT가 없습니다");
+    var owner = S.settings.ownerName || prompt("보내는 사람 이름 (형제들 앱에 표시됩니다)", "") || "";
+    if(owner){ S.settings.ownerName = owner; save(); }
+    var data=oatExportData(y, owner), name="OAT_"+y+"_"+(owner||"나")+".txt";
+    var file=new File([JSON.stringify(data)], name, {type:"text/plain"});
+    var can=false; try{ can=!!(navigator.canShare && navigator.canShare({files:[file]})); }catch(e){}
+    if(can) navigator.share({files:[file], title:name}).then(function(){ toast("보냈습니다"); }).catch(function(e){ if(!e || e.name!=="AbortError") toast("보내지 못했습니다"); });
+    else { var a=document.createElement("a"); a.href=URL.createObjectURL(file); a.download=name; document.body.appendChild(a); a.click(); a.remove(); toast("파일로 저장했습니다: "+name); }
+  }
+};
+Object.assign(ACT, OAT_ACT);
+document.addEventListener("change", function(e){
+  if(e.target.id==="oatYearSel"){ UI.oatYear=Number(e.target.value); render(); }
+});
+$("#oatFileIn").addEventListener("change", function(e){
+  var f=e.target.files[0]; if(!f) return; var rd=new FileReader();
+  rd.onload=function(){ var d; try{ d=JSON.parse(rd.result); }catch(err){ d=null; }
+    if(!d || d.app!=="swgido-oat"){ toast("OAT 파일이 아닌 것 같아요"); return; }
+    closeSheet(); oatImportSheet(d); };
+  rd.readAsText(f); e.target.value="";
+});
 
 load(); if(dedupeGroups()) save(); render(); Sync.onOpen();
 /* 카카오톡 등에서 "공유 → 쉬지 않는 기도"로 들어온 글 */
