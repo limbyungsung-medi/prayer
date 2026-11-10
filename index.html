@@ -182,7 +182,7 @@ label.f{display:block; font-size:13.5px; color:var(--muted); margin:12px 0 4px; 
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-10-1";
+var APP_VERSION = "2026-11-10-2";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -632,7 +632,11 @@ var STEP_BODY = {
     else if(short) h += '<div class="small muted" style="margin-bottom:6px">이름을 부르며 기도하고 눌러 표시하세요</div><div class="namechips">'+p.weekly.map(function(x){ return '<button class="'+(L.prayed.indexOf(x.id)>=0?"on":"")+'" data-act="pray" data-id="'+x.id+'">'+esc(x.name)+'</button>'; }).join("")+'</div>';
     else h += '<div class="pgrid">'+p.weekly.map(function(x){ return pcard(x, L, null); }).join("")+'</div>';
     if(p.weekly.length > cap) h += '<div class="banner warn">오늘 순서가 '+p.weekly.length+'명으로 하루 상한('+cap+'명)을 넘습니다. "사람" 탭에서 몇 분을 "한 달" 원으로 옮겨 보세요.</div>';
-    if(p.monthly.length) h += '<div class="secttl">한 달 순서 · 이름 불러 기도</div><div class="namechips">'+p.monthly.map(function(x){ return '<button class="'+(L.prayed.indexOf(x.id)>=0?"on":"")+'" data-act="pray" data-id="'+x.id+'">'+esc(x.name)+'</button>'; }).join("")+'</div>';
+    if(p.monthly.length){
+      h += '<div class="secttl">한 달 순서 · '+p.monthly.length+'명</div>';
+      if(short) h += '<div class="namechips">'+p.monthly.map(function(x){ return '<button class="'+(L.prayed.indexOf(x.id)>=0?"on":"")+'" data-act="pray" data-id="'+x.id+'">'+esc(x.name)+'</button>'; }).join("")+'</div>';
+      else h += '<div class="pgrid">'+p.monthly.map(function(x){ return pcard(x, L, null); }).join("")+'</div>';
+    }
     return h;
   },
   word:function(t){
