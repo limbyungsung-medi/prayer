@@ -284,6 +284,7 @@ label.f{font-size:14.5px; margin:16px 0 6px;}
 .qtsum{margin-top:10px; padding:12px 14px; border-radius:12px; background:var(--bg); cursor:pointer; font-size:16px;}
 .qtbtns{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px;}
 .qtbtns .btn{min-height:48px;}
+.qtbig{min-height:52vh; line-height:1.7; font-size:17px;}
 .qtcal{display:grid; grid-template-columns:repeat(7,1fr); gap:4px; margin-top:10px; text-align:center;}
 .qtcal i{font-style:normal; font-size:12.5px; color:var(--faint); padding:2px 0;}
 .qtcal button{min-height:42px; border-radius:10px; border:0; background:var(--card2); color:var(--muted); font-size:15px; cursor:pointer;}
@@ -327,7 +328,7 @@ input[type=month]{min-height:48px; padding:11px 14px; border-radius:12px; font-s
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-11-1";
+var APP_VERSION = "2026-11-11-2";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -2308,7 +2309,7 @@ function bibleUrl(r){
 }
 function qtPlanOn(d){ for(var i=0;i<S.qtplan.length;i++) if(S.qtplan[i].date===d) return S.qtplan[i]; return null; }
 function qtOn(d){ for(var i=0;i<S.qt.length;i++) if(S.qt[i].date===d) return S.qt[i]; return null; }
-function qtWritten(q){ return !!(q && ((q.title||"").trim() || (q.body||"").trim() || (q.prayer||"").trim())); }
+function qtWritten(q){ return !!(q && qtBodyOf(q).trim()); }
 
 /* 2026년 11월 본문표 (처음 한 번만 넣어 둠 · 다음 달부터는 "본문표"에서 붙여넣기) */
 var QT_SEED = {"2026-11":"1(일) 시136 싱가폴 2(월) 민수기1장 3(화) 민2장 4(수) 민3:1-26 5(목) 민3:27-51 6(금) 민4:1-20 7(토) 민4:21-33 8(일) 시137 인도네시아 9(월) 민4:34-49 10(화) 민5장 11(수) 민6장 12(목) 민7:1-47 13(금) 민7:48-89 14(토) 민8장 15(일) 시138 말레이시아 16(월) 민9장 17(화) 민10장 18(수) 민11장 19(목) 민12장 20(금) 민13장 21(토) 민14:1-25 22(일) 시139 레바논 23(월) 민14:26-45 24(화) 민15:1-21 25(수) 민15:22-41 26(목) 민16:1-35 27(금) 민16:36-50 28(토) 민17장 29(일) 시140 태국 30(월) 민18:1-20"};
@@ -2344,15 +2345,15 @@ function qtTodayCard(t){
   var h = '<div class="card qtcard'+(done?' done':'')+'" id="qtToday"><div class="row"><span class="qtlabel">경건의 시간</span><span class="sp"></span>'+(done?'<span class="chip good">✓ 묵상함</span>':'')+'</div>';
   h += '<div class="qtref">'+(r ? esc(r.full) : (p ? esc(p.ref) : '<span class="muted">오늘 본문 정하기</span>'))+'</div>';
   if(r && r.extra) h += '<div class="small" style="margin-top:2px">🌏 오늘 열방 기도: <b>'+esc(r.extra)+'</b></div>';
-  if(done) h += '<div class="qtsum" data-act="qtOpen" data-date="'+t+'"><b>'+esc(q.title||"(제목 없음)")+'</b>'+(q.apply?'<div class="small muted">적용 · '+esc(q.apply)+'</div>':'')+'</div>';
+  if(done) h += '<div class="qtsum" data-act="qtOpen" data-date="'+t+'"><b>'+esc(qtTitleOf(q)||"(제목 없음)")+'</b>'+(q.apply?'<div class="small muted">적용 · '+esc(q.apply)+'</div>':'')+'</div>';
   h += '<div class="qtbtns">'+
     (r ? '<button class="btn" data-act="qtBible" data-date="'+t+'">📖 본문 읽기</button>' : '<button class="btn" data-act="qtPlan">📅 본문표</button>')+
     (done ? '<button class="btn" data-act="qtShare" data-date="'+t+'">📋 블로그로</button>' : '<button class="btn primary" data-act="qtOpen" data-date="'+t+'">✍️ 묵상 쓰기</button>')+'</div>';
   return h + '</div>';
 }
 function qtPrayerHtml(t){
-  var q = qtOn(t); if(!q || !(q.prayer||"").trim()) return "";
-  return '<div class="note" data-act="qtOpen" data-date="'+t+'" style="cursor:pointer"><div class="tiny muted">✍️ 오늘 묵상에서 드린 기도'+(q.passage?' · '+esc(q.passage):'')+'</div><div style="margin-top:4px;white-space:pre-wrap">'+esc(q.prayer)+'</div></div>';
+  var q = qtOn(t); if(!qtWritten(q)) return "";
+  return '<div class="note" data-act="qtOpen" data-date="'+t+'" style="cursor:pointer"><div class="tiny muted">✍️ 오늘 묵상'+(q.passage?' · '+esc(q.passage):'')+' — 묵상한 말씀으로 기도하기</div><div class="ap" style="margin-top:2px">'+esc(qtTitleOf(q))+'</div>'+(q.apply?'<div class="small muted">적용 · '+esc(q.apply)+'</div>':'')+'</div>';
 }
 function qtNationHtml(t){
   var p = qtPlanOn(t), r = p && parseRef(p.ref);
@@ -2365,14 +2366,12 @@ function qtSheet(d){
   d = d || today();
   var q = qtOn(d), p = qtPlanOn(d), draft = null;
   if(!qtWritten(q)){ try{ draft = JSON.parse(localStorage.getItem(qtDraftKey(d))||"null"); }catch(e){} }
-  var x = Object.assign({passage: p ? (parseRef(p.ref)||{full:p.ref}).full : "", title:"", verses:"", body:"", apply:"", prayer:""}, q||{}, draft||{});
+  var x = Object.assign({passage: p ? (parseRef(p.ref)||{full:p.ref}).full : "", body:"", apply:""}, q ? {passage:q.passage||"", body:qtBodyOf(q), apply:q.apply||""} : {}, draft||{});
   var h = '<div class="tiny muted">'+fmtDate(d)+' '+DOW[dow(d)]+'요일'+(draft?' · 쓰던 글을 이어 씁니다':'')+'</div>'+
     '<label class="f">본문</label><div class="row"><input type="text" id="qtPassage" value="'+esc(x.passage)+'" placeholder="민수기 5장" style="flex:1"><button class="btn" data-act="qtBible" data-date="'+d+'" style="flex:none">📖 읽기</button></div>'+
-    '<label class="f">제목</label><input type="text" id="qtTitle" class="qtin" value="'+esc(x.title)+'" placeholder="하나님이 함께 진영에 거하시려면">'+
-    '<label class="f">붙든 말씀 <span class="tiny muted">(성경 앱에서 복사해 붙여넣기)</span></label><textarea id="qtVerses" class="qtin" style="min-height:96px">'+esc(x.verses)+'</textarea><div class="actions" style="margin-top:6px"><button class="btn sm" data-act="qtPasteVerses">📋 붙여넣기</button></div>'+
-    '<label class="f">묵상 · 깨달은 것</label><textarea id="qtBody" class="qtin" style="min-height:200px">'+esc(x.body)+'</textarea>'+
-    '<label class="f">적용 하나 <span class="tiny muted">(적으면 적용 노트에 올라 다시 상기됩니다)</span></label><input type="text" id="qtApply" class="qtin" value="'+esc(x.apply)+'" placeholder="(선택)">'+
-    '<label class="f">기도</label><textarea id="qtPrayer" class="qtin" style="min-height:120px">'+esc(x.prayer)+'</textarea>'+
+    '<label class="f">묵상 <span class="tiny muted">(제목·말씀·묵상·기도를 평소 쓰시는 대로)</span></label><textarea id="qtBody" class="qtin qtbig">'+esc(x.body)+'</textarea>'+
+    '<div class="actions" style="margin-top:6px"><button class="btn sm" data-act="qtPasteVerses">📋 붙여넣기</button></div>'+
+    '<label class="f">적용 <span class="tiny muted">(있는 날만 · 적으면 적용 노트에 올라 다시 상기됩니다)</span></label><input type="text" id="qtApply" class="qtin" value="'+esc(x.apply)+'" placeholder="없으면 비워 두세요">'+
     '<div class="actions"><button class="btn primary" data-act="qtSave" data-date="'+d+'" style="flex:1">저장</button><button class="btn" data-act="qtSaveShare" data-date="'+d+'" style="flex:1">저장 · 📋 블로그로</button></div>'+
     (qtWritten(q) ? '<div class="actions" style="margin-top:8px"><button class="btn sm danger" data-act="qtDel" data-date="'+d+'">이 묵상 지우기</button></div>' : '');
   openSheet("✍️ 묵상 노트", h, function(){
@@ -2382,35 +2381,34 @@ function qtSheet(d){
     });
   });
 }
-function qtFormVals(){ return {passage:val("qtPassage"), title:val("qtTitle"), verses:$("#qtVerses").value.trim(), body:$("#qtBody").value.trim(), apply:val("qtApply"), prayer:$("#qtPrayer").value.trim()}; }
+/* 예전(칸이 나뉘어 있던) 기록도 한 칸으로 합쳐 보여 줌 */
+function qtBodyOf(q){
+  if(!q) return "";
+  if(!q.title && !q.verses && !q.prayer) return q.body||"";
+  return [q.title ? q.title + (q.passage ? " ("+q.passage+")" : "") : "", q.verses, q.body, q.prayer].filter(function(x){ return x && String(x).trim(); }).join("\n\n");
+}
+function qtTitleOf(q){ var b = qtBodyOf(q).trim(); return b ? b.split("\n")[0].replace(/\s*\([^()]*\)\s*$/,"").slice(0,60) : ""; }
+function qtFormVals(){ return {passage:val("qtPassage"), body:$("#qtBody").value.replace(/\s+$/,""), apply:val("qtApply")}; }
 function qtSaveForm(d){
   var v = qtFormVals();
-  if(!v.title && !v.body && !v.prayer && !v.verses) { toast("내용을 적어 주세요"); return null; }
+  if(!v.body.trim()) { toast("묵상을 적어 주세요"); return null; }
   var q = qtOn(d); if(!q){ q = {id:"qt-"+d, date:d, created:today()}; S.qt.push(q); }
-  Object.assign(q, v);
+  Object.assign(q, v); delete q.title; delete q.verses; delete q.prayer;
   /* 적용 → 적용 노트 (이미 만든 노트가 있으면 고침) */
   if(v.apply){
     var n = q.noteId && note(q.noteId);
-    if(n){ n.apply = v.apply; n.ref = v.passage; n.learned = v.title; }
-    else { n = newNote({ref:v.passage, learned:v.title, apply:v.apply, source:"QT", date:d}); S.notes.push(n); q.noteId = n.id; }
+    if(n){ n.apply = v.apply; n.ref = v.passage; n.learned = qtTitleOf(q); }
+    else { n = newNote({ref:v.passage, learned:qtTitleOf(q), apply:v.apply, source:"QT", date:d}); S.notes.push(n); q.noteId = n.id; }
   }
   try{ localStorage.removeItem(qtDraftKey(d)); }catch(e){}
   save(); return q;
 }
 /* 블로그·카톡에 붙여넣을 글: 평소 쓰시던 모양 그대로 */
-function qtText(q){
-  var parts = [];
-  parts.push((q.title||"") + (q.passage ? " ("+q.passage+")" : ""));
-  if(q.verses) parts.push(q.verses);
-  if(q.body) parts.push(q.body);
-  if(q.apply) parts.push("적용: "+q.apply);
-  if(q.prayer) parts.push(q.prayer);
-  return parts.filter(function(x){ return x && x.trim(); }).join("\n\n");
-}
+function qtText(q){ var b = qtBodyOf(q).trim(); return b + (q.apply ? "\n\n적용: " + q.apply : ""); }
 function qtShareText(q){
   var txt = qtText(q);
   var copy = function(){ (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(txt) : Promise.reject()).then(function(){ toast("복사했습니다 · 블로그 글쓰기에 붙여넣으세요"); }).catch(function(){ toast("복사하지 못했습니다"); }); };
-  if(navigator.share){ navigator.share({title:q.title||"묵상", text:txt}).catch(function(e){ if(!e || e.name!=="AbortError") copy(); }); }
+  if(navigator.share){ navigator.share({title:qtTitleOf(q)||"묵상", text:txt}).catch(function(e){ if(!e || e.name!=="AbortError") copy(); }); }
   else copy();
 }
 
@@ -2433,8 +2431,8 @@ function renderQtList(){
     h += '<div class="qtcal">'+DOW.map(function(x){ return '<i>'+x+'</i>'; }).join("")+cells+'</div>';
   } else h += '<div class="small muted" style="margin-top:10px">"'+esc(qs)+'" 찾은 묵상 '+list.length+'개</div>';
   h += list.length ? '<div class="ngrid">'+list.map(function(q){
-      return '<div class="note" data-act="qtOpen" data-date="'+q.date+'"><div class="row tiny muted">'+fmtDate(q.date)+' '+DOW[dow(q.date)]+'<span class="sp"></span>'+(q.passage?'<span class="chip">'+esc(q.passage)+'</span>':'')+'</div><div class="ap">'+esc(q.title||"(제목 없음)")+'</div>'+
-        (q.body?'<div class="small" style="display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin-top:4px">'+esc(q.body)+'</div>':'')+'</div>'; }).join("")+'</div>'
+      return '<div class="note" data-act="qtOpen" data-date="'+q.date+'"><div class="row tiny muted">'+fmtDate(q.date)+' '+DOW[dow(q.date)]+'<span class="sp"></span>'+(q.passage?'<span class="chip">'+esc(q.passage)+'</span>':'')+'</div><div class="ap">'+esc(qtTitleOf(q)||"(제목 없음)")+'</div>'+
+        (qtBodyOf(q).indexOf("\n")>0?'<div class="small" style="display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin-top:4px">'+esc(qtBodyOf(q).slice(qtBodyOf(q).indexOf("\n")).trim())+'</div>':'')+'</div>'; }).join("")+'</div>'
     : '<div class="empty">'+(qs?'찾은 묵상이 없습니다.':'이 달에 적은 묵상이 아직 없습니다.')+'</div>';
   if(!qs && cnt) h += '<div class="actions"><button class="btn sm" data-act="qtCopyMonth" data-v="'+ym+'">📋 이 달 묵상 모두 복사</button></div>';
   return h + '<div style="height:24px"></div>';
@@ -2463,7 +2461,7 @@ var QT_ACT = {
     try{ w = window.open(url, "_blank"); }catch(e){}
     if(!w) location.href = url;
   },
-  qtPasteVerses:function(){ if(!navigator.clipboard||!navigator.clipboard.readText) return toast("입력칸을 길게 눌러 붙여넣기 하세요"); navigator.clipboard.readText().then(function(x){ var el=$("#qtVerses"); el.value = (el.value ? el.value+"\n" : "") + x.trim(); el.dispatchEvent(new Event("input")); }).catch(function(){ toast("입력칸을 길게 눌러 붙여넣기 하세요"); }); },
+  qtPasteVerses:function(){ if(!navigator.clipboard||!navigator.clipboard.readText) return toast("입력칸을 길게 눌러 붙여넣기 하세요"); navigator.clipboard.readText().then(function(x){ var el=$("#qtBody"), a=el.selectionStart||el.value.length, b2=el.selectionEnd||a; el.value = el.value.slice(0,a) + x.trim() + el.value.slice(b2); el.dispatchEvent(new Event("input")); el.focus(); }).catch(function(){ toast("입력칸을 길게 눌러 붙여넣기 하세요"); }); },
   qtSave:function(b){ var q = qtSaveForm(b.dataset.date); if(!q) return; closeSheet(); render(); toast(q.apply ? "저장 · 적용은 적용 노트에 올렸습니다" : "저장했습니다"); },
   qtSaveShare:function(b){ var q = qtSaveForm(b.dataset.date); if(!q) return; closeSheet(); render(); qtShareText(q); },
   qtShare:function(b){ var q = qtOn(b.dataset.date); if(q) qtShareText(q); },
