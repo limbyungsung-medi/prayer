@@ -291,6 +291,18 @@ label.f{font-size:14.5px; margin:16px 0 6px;}
 .qtcal button.on{background:var(--accent); color:#1a1a1a; font-weight:800;}
 .qtcal button.today{outline:2px solid var(--accent); outline-offset:-2px;}
 input[type=month]{min-height:48px; padding:11px 14px; border-radius:12px; font-size:17px; width:100%; background:var(--card2); color:var(--text); border:1px solid var(--line);}
+
+/* 찾기 */
+input[type=search]{min-height:52px; padding:12px 16px; border-radius:14px; font-size:17px; width:100%; background:var(--card2); color:var(--text); border:1.5px solid var(--accent); -webkit-appearance:none;}
+.srsec{font-size:14.5px; font-weight:800; color:var(--accent); margin:20px 0 4px;}
+.srlist{border-top:1px solid var(--line);}
+.srrow{display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); min-height:52px;}
+.srmain{flex:1; min-width:0; cursor:pointer; font-size:16px; line-height:1.45;}
+.srrow .btn.sm{flex:none; min-height:40px;}
+.srperson{border-bottom:1px solid var(--line); padding-bottom:4px;}
+.srperson > .srrow{border-bottom:0;}
+.srperson .srrow + .srrow, .srperson > .srrow ~ .srrow{padding-left:14px; border-bottom:0; border-top:1px dashed var(--line); min-height:48px;}
+mark{background:var(--accentSoft); color:var(--accent); border-radius:3px; padding:0 1px;}
 /* 설치 안내 */
 .installbar{display:flex; align-items:center; gap:12px; margin-top:14px; padding:12px 14px; border-radius:16px; background:var(--accentSoft); font-size:15px; line-height:1.45;}
 .installbar b{display:block; font-size:15.5px;}
@@ -311,6 +323,7 @@ input[type=month]{min-height:48px; padding:11px 14px; border-radius:12px; font-s
 <header class="top"><div class="wrap">
   <div class="brand" id="brand">쉬지 않는 기도</div>
   <button class="iconbtn" id="syncBtn" data-act="syncTap" aria-label="동기화" style="display:none;font-size:15px;width:auto;padding:0 8px;gap:4px"></button>
+  <button class="iconbtn" data-act="search" aria-label="찾기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg></button>
   <button class="iconbtn" data-act="settings" aria-label="설정"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
 </div></header>
 <main class="wrap" id="main"></main>
@@ -328,7 +341,7 @@ input[type=month]{min-height:48px; padding:11px 14px; border-radius:12px; font-s
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-11-2";
+var APP_VERSION = "2026-11-12-1";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -2490,6 +2503,92 @@ Object.assign(ACT, QT_ACT);
 document.addEventListener("input", function(e){
   if(e.target.id==="qtSearchIn"){ UI.qtSearch = e.target.value; clearTimeout(UI._qts); UI._qts = setTimeout(function(){ var pos = e.target.selectionStart; render(); var el = document.getElementById("qtSearchIn"); if(el){ el.focus(); try{ el.setSelectionRange(pos,pos); }catch(x){} } }, 350); }
 });
+
+
+/* ============ 찾기 (색인) ============
+   머리줄 🔍 → 사람·기도제목·묵상·적용·감사·약속·OAT를 한 번에 찾는다.
+   사람 이름을 찾으면 그 사람의 기도제목이 바로 아래에 나오고, 🌿 응답 단추로 곧장 응답을 적는다. */
+function srNorm(s){ return String(s||"").toLowerCase().replace(/\s+/g,""); }
+function srHit(text, q){
+  if(!q) return false; var t = srNorm(text), n = srNorm(q);
+  if(t.indexOf(n) >= 0) return true;
+  if(/^[ㄱ-ㅎ]+$/.test(n) && chosung(t).indexOf(n) >= 0) return true;   /* 초성 찾기: ㄱㅇㅎ → 김욱한 */
+  if(/^\d{3,}$/.test(n) && t.replace(/\D/g,"").indexOf(n) >= 0) return true;  /* 전화번호 숫자 */
+  return false;
+}
+function srMark(text, q, max){
+  text = String(text||""); var plain = text.replace(/\s+/g," ").trim(), qq = String(q||"").trim();
+  var i = qq ? plain.toLowerCase().indexOf(qq.toLowerCase()) : -1;
+  if(max && plain.length > max){ var st = Math.max(0, i - 20); plain = (st ? "…" : "") + plain.slice(st, st + max) + (st + max < plain.length ? "…" : ""); i = qq ? plain.toLowerCase().indexOf(qq.toLowerCase()) : -1; }
+  if(i < 0) return esc(plain);
+  return esc(plain.slice(0,i)) + '<mark>' + esc(plain.slice(i, i+qq.length)) + '</mark>' + esc(plain.slice(i+qq.length));
+}
+function srStatus(it){ return {active:"기도 중", answered:"🌿 응답", other:"🌿 다르게 응답", waiting:"기다림", released:"내려놓음"}[it.status] || ""; }
+function srItemRow(it, q, showPerson){
+  var p = person(it.personId), ans = it.status==="answered" || it.status==="other";
+  return '<div class="srrow"><div class="srmain" data-act="openItem" data-id="'+it.id+'">'+
+    (showPerson ? '<div class="tiny muted">'+(p ? esc(p.name) : (it.personId==="me" ? "나" : "받은 제목"))+' · '+srStatus(it)+'</div>' : '')+
+    '<div>'+srMark(it.title, q)+(showPerson ? '' : ' <span class="tiny muted">'+srStatus(it)+'</span>')+'</div>'+
+    (it.answerText && srHit(it.answerText, q) ? '<div class="small muted">응답: '+srMark(it.answerText, q, 60)+'</div>' : '')+
+    (it.detail && srHit(it.detail, q) ? '<div class="small muted">'+srMark(it.detail, q, 60)+'</div>' : '')+'</div>'+
+    (ans ? '' : '<button class="btn sm" data-act="srAnswer" data-id="'+it.id+'">🌿 응답</button>')+'</div>';
+}
+function searchResults(q){
+  q = String(q||"").trim(); if(!q) return '<div class="empty">사람 이름, 기도제목, 묵상, 감사… 무엇이든 찾을 수 있습니다.<div class="tiny" style="margin-top:6px">이름은 초성으로도 찾습니다 (예: ㄱㅇㅎ)</div></div>';
+  var h = "", total = 0, LIM = 30;
+  var sec = function(title, rows){ if(!rows.length) return; total += rows.length; h += '<div class="srsec">'+title+' <span class="tiny muted">'+rows.length+'</span></div><div class="srlist">'+rows.slice(0,LIM).join("")+(rows.length>LIM?'<div class="tiny muted" style="padding:8px 0">… '+(rows.length-LIM)+'개 더 — 낱말을 더 붙여 찾아 보세요</div>':'')+'</div>'; };
+  /* 1. 사람 + 그 사람의 기도 중인 제목 */
+  var ppl = S.people.filter(function(p){ return srHit(p.name, q) || srHit(p.memo, q) || srHit(p.phone, q); }).sort(function(a,b){ return a.name.localeCompare(b.name,"ko"); });
+  var shownItems = {};
+  sec("👤 사람", ppl.map(function(p){
+    var g = group(p.groupId), its = S.items.filter(function(it){ return it.personId===p.id && (it.status==="active"||it.status==="waiting"); });
+    its.forEach(function(it){ shownItems[it.id] = 1; });
+    return '<div class="srperson"><div class="srrow"><div class="srmain" data-act="openPerson" data-id="'+p.id+'"><b style="font-size:17px">'+srMark(p.name, q)+'</b> <span class="tiny muted">'+(g?esc(g.name):"")+'</span>'+
+      (p.memo && srHit(p.memo, q) && !srHit(p.name, q) ? '<div class="small muted">'+srMark(p.memo, q, 60)+'</div>' : '')+'</div>'+
+      '<button class="btn sm" data-act="quickAdd" data-pid="'+p.id+'">＋ 제목</button></div>'+
+      (its.length ? its.map(function(it){ return srItemRow(it, "", false); }).join("") : '<div class="tiny muted" style="padding:2px 0 6px">기도 중인 제목 없음</div>')+'</div>';
+  }));
+  /* 2. 기도제목 (사람 칸에 이미 나온 것은 빼고) */
+  sec("🙏 기도제목", S.items.filter(function(it){ return !shownItems[it.id] && (srHit(it.title, q) || srHit(it.detail, q) || srHit(it.answerText, q) || srHit(it.verse, q)); })
+    .sort(function(a,b){ return (b.updated||b.created||"") < (a.updated||a.created||"") ? -1 : 1; }).map(function(it){ return srItemRow(it, q, true); }));
+  /* 3. 묵상 노트 */
+  sec("✍️ 묵상 노트", S.qt.filter(function(x){ return qtWritten(x) && (srHit(qtText(x), q) || srHit(x.passage, q)); }).sort(function(a,b){ return a.date<b.date?1:-1; })
+    .map(function(x){ return '<div class="srrow"><div class="srmain" data-act="qtOpen" data-date="'+x.date+'"><div class="tiny muted">'+fmtDate(x.date)+(x.passage?' · '+esc(x.passage):'')+'</div><div>'+esc(qtTitleOf(x))+'</div><div class="small muted">'+srMark(qtText(x), q, 70)+'</div></div></div>'; }));
+  /* 4. 적용 노트 */
+  sec("📖 적용 노트", S.notes.filter(function(n){ return srHit([n.ref,n.learned,n.apply,n.fix,n.speaker,n.source].join(" "), q); })
+    .map(function(n){ return '<div class="srrow"><div class="srmain" data-act="openNote" data-id="'+n.id+'"><div class="tiny muted">'+esc(n.date||"")+(n.source?' · '+esc(n.source):'')+(n.ref?' · '+esc(n.ref):'')+'</div><div>'+srMark(n.apply||n.fix||n.learned||"", q, 70)+'</div></div></div>'; }));
+  /* 5. 감사 */
+  var th = []; Object.keys(S.logs).sort().reverse().forEach(function(d){ var L = S.logs[d]; (L.thanks||[]).concat(L.evening && L.evening.thanks ? [L.evening.thanks] : []).forEach(function(x){ if(x && srHit(x, q)) th.push('<div class="srrow"><div class="srmain" data-act="srThanks"><div class="tiny muted">'+fmtDate(d)+'</div><div>'+srMark(x, q, 70)+'</div></div></div>'); }); });
+  sec("🌿 감사", th);
+  /* 6. 약속 · 붙든 말씀 */
+  sec("🤝 약속 · 붙든 말씀", S.promises.filter(function(x){ return srHit([x.ref,x.word,x.text,x.context,x.kairos].join(" "), q); })
+    .map(function(x){ return '<div class="srrow"><div class="srmain" data-act="openPromise" data-id="'+x.id+'"><div class="tiny muted">'+PKIND[x.kind].name+(x.ref?' · '+esc(x.ref):'')+'</div><div>'+srMark(x.text||x.word, q, 70)+'</div></div></div>'; }));
+  /* 7. OAT */
+  sec("🎯 OAT", S.oat.filter(function(r){ return r.kind!=="year" && srHit([r.text,r.title,r.detail,r.ref,(r.people||[]).map(function(x){ return x.name+" "+x.note; }).join(" ")].join(" "), q); })
+    .map(function(r){ return '<div class="srrow"><div class="srmain" data-act="oatOpen" data-id="'+r.id+'"><div class="tiny muted">'+r.year+' · '+(r.kind==="pray"?"장기기도제목":esc(AREA_NAME[r.area]||""))+'</div><div>'+srMark(r.text||r.title, q, 70)+'</div>'+
+      ((r.people||[]).filter(function(x){ return srHit(x.name+" "+x.note, q); }).map(function(x){ return '<div class="small muted">'+srMark(x.name+(x.note?": "+x.note:""), q)+'</div>'; }).join(""))+'</div></div>'; }));
+  return total ? h : '<div class="empty">"'+esc(q)+'"(으)로 찾은 것이 없습니다.</div>';
+}
+function searchSheet(q){
+  q = q != null ? q : (UI.searchQ || "");
+  openSheet("🔍 찾기", '<input type="search" id="srIn" value="'+esc(q)+'" placeholder="이름, 기도제목, 묵상, 감사…" autocomplete="off" enterkeyhint="search"><div id="srRes">'+searchResults(q)+'</div>', function(){
+    var el = $("#srIn"), t0 = null;
+    el.addEventListener("input", function(){ clearTimeout(t0); t0 = setTimeout(function(){ UI.searchQ = el.value; $("#srRes").innerHTML = searchResults(el.value); }, 150); });
+    if(!q) setTimeout(function(){ try{ el.focus(); }catch(e){} }, 120);
+  });
+}
+Object.assign(ACT, {
+  search:function(){ searchSheet(); },
+  srAnswer:function(b){
+    var it = item(b.dataset.id); if(!it) return;
+    UI.backToSearch = true; itemSheet(it);
+    var btn = document.querySelector('[data-radio="iStatus"] [data-v="answered"]'); if(btn) btn.click();
+    setTimeout(function(){ var a = $("#iAns"); if(a){ a.focus(); a.scrollIntoView({block:"center"}); } }, 150);
+  },
+  srThanks:function(){ closeSheet(); UI.tab="answers"; UI.ansView="thanks"; UI.thanksQ = UI.searchQ || ""; render(); window.scrollTo(0,0); }
+});
+/* 찾기에서 응답을 적고 저장하면 다시 찾기 결과로 돌아온다 */
+(function(){ var orig = ACT.saveItem; ACT.saveItem = function(b, e){ var back = UI.backToSearch; UI.backToSearch = false; orig(b, e); if(back) setTimeout(function(){ searchSheet(UI.searchQ); }, 50); }; })();
 
 load(); seedQtPlan(); if(dedupeGroups()) save(); else save({noSync:true}); render(); Sync.onOpen();
 /* 카카오톡 등에서 "공유 → 쉬지 않는 기도"로 들어온 글 */
