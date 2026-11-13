@@ -296,6 +296,11 @@ input[type=month]{min-height:48px; padding:11px 14px; border-radius:12px; font-s
 input[type=search]{min-height:52px; padding:12px 16px; border-radius:14px; font-size:17px; width:100%; background:var(--card2); color:var(--text); border:1.5px solid var(--accent); -webkit-appearance:none;}
 .srsec{font-size:14.5px; font-weight:800; color:var(--accent); margin:20px 0 4px;}
 .srlist{border-top:1px solid var(--line);}
+.pacts{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:4px;}
+.pact{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; min-height:64px; border-radius:14px; background:var(--card2); border:1px solid var(--line); color:var(--text); font-size:14.5px; font-weight:700; text-decoration:none; cursor:pointer;}
+.pact span{font-size:22px; line-height:1.2;}
+.pact.off{opacity:.4;}
+.pact:active{transform:scale(.97);}
 .srrow{display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); min-height:52px;}
 .srmain{flex:1; min-width:0; cursor:pointer; font-size:16px; line-height:1.45;}
 .srrow .btn.sm{flex:none; min-height:40px;}
@@ -341,7 +346,7 @@ mark{background:var(--accentSoft); color:var(--accent); border-radius:3px; paddi
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-12-1";
+var APP_VERSION = "2026-11-13-1";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -1029,7 +1034,7 @@ function personSheet(p){
   var isNew = !p; p = p || {id:null, name:"", phone:"", groupId:"", circle:"weekly", day:null, dayFixed:false, birthday:"", memo:""};
   var its = p.id ? S.items.filter(function(it){ return it.personId===p.id; }).sort(function(a,b){ return (a.status==="active"?0:1)-(b.status==="active"?0:1) || (a.created<b.created?1:-1); }) : [];
   var dayOpts = '<option value="auto" '+(!p.dayFixed?"selected":"")+'>자동 (고르게)</option>'+DOW.map(function(d,i){ return '<option value="'+i+'" '+(p.dayFixed&&p.day===i?"selected":"")+'>'+d+'요일 고정</option>'; }).join("");
-  var h = '<label class="f">이름</label><input type="text" id="pName" value="'+esc(p.name)+'" placeholder="이름 또는 호칭">'+
+  var fields = '<label class="f">이름</label><input type="text" id="pName" value="'+esc(p.name)+'" placeholder="이름 또는 호칭">'+
     '<label class="f">전화번호</label><input type="tel" id="pPhone" value="'+esc(p.phone)+'" placeholder="010-">'+
     '<label class="f">그룹</label><select id="pGroup">'+groupOptions(p.groupId)+'</select>'+
     '<label class="f">얼마나 자주</label>'+radio("pCircle", [["daily","매일"],["weekly","매주"],["monthly","한 달에 한 번"]], p.circle)+
@@ -1037,10 +1042,17 @@ function personSheet(p){
     '<label class="f">생일 (그날 축복 기도로, 일주일 전부터 미리 알림)</label><div class="row"><input type="text" id="pBirth" value="'+esc(p.birthday)+'" placeholder="예: 04-18 또는 1963-04-18" style="flex:1"><label class="check" style="margin:0;white-space:nowrap"><input type="checkbox" id="pBirthLunar" '+(p.birthLunar?"checked":"")+'>음력</label></div>'+(p.birthLunar&&p.birthday&&lunarFmt()?'<div class="tiny muted" style="margin-top:4px">올해(또는 다음) 양력: '+(function(){ var b=normDate(p.birthday); if(!b) return ""; var o=nextOccur(today(), b.md, true); return fmtDate(o.date); })()+'</div>':'')+
     '<label class="f">기념일 (결혼기념일 등)</label><div id="annWrap">'+(p.anniversaries||[]).map(annRow).join("")+'</div><div class="actions" style="margin-top:6px"><button type="button" class="btn sm" data-act="addAnn">＋ 기념일</button></div>'+
     '<label class="f">메모</label><textarea id="pMemo" placeholder="관계, 기억할 것" style="min-height:'+(p.memo&&p.memo.length>80?160:70)+'px">'+esc(p.memo)+'</textarea>';
-  if(!isNew){
+  var h = "";
+  if(isNew) h = fields;
+  else {
+    var tel = p.phone ? 'href="tel:'+esc(p.phone.replace(/[^\d+]/g,""))+'" data-act="contacted" data-id="'+p.id+'"' : 'data-act="noPhone"';
+    h += '<div class="pacts"><a class="pact'+(p.phone?'':' off')+'" '+tel+'><span>📞</span>전화</a>'+
+      '<button class="pact" data-act="msg" data-id="'+p.id+'"><span>💬</span>문자·카톡</button>'+
+      '<button class="pact" data-act="quickAdd" data-pid="'+p.id+'"><span>🙏</span>기도제목</button></div>'+
+      (p.phone ? '<div class="tiny muted" style="text-align:center;margin-top:6px">'+esc(p.phone)+' · 최근 연락 '+(p.lastContact?fmtDate(p.lastContact):"없음")+'</div>' : '<div class="tiny muted" style="text-align:center;margin-top:6px">전화번호가 없습니다 — 아래 정보에서 넣어 주세요</div>');
     h += '<h3>기도제목</h3>'+(its.length?'<div class="list">'+its.map(function(it){ return '<div class="li" data-act="openItem" data-id="'+it.id+'"><div style="flex:1"><div>'+(it.urgent&&it.status==="active"?'<span class="chip urgent">긴급</span> ':'')+esc(it.title)+'</div><div class="tiny muted">'+fmtDate(it.created)+' 등록'+(it.due?' · '+fmtDate(it.due):'')+' · 기도 '+(it.prayed||[]).length+'일</div></div>'+statusChip(it)+'</div>'; }).join("")+'</div>':'<div class="empty">아직 없습니다.</div>')+
       '<div class="actions"><button class="btn sm" data-act="quickAdd" data-pid="'+p.id+'">＋ 기도제목 추가</button></div>'+
-      '<div class="tiny muted" style="margin-top:12px">최근 연락: '+(p.lastContact?fmtDate(p.lastContact):"없음")+'</div>';
+      '<h3>정보</h3>' + fields;
   }
   h += '<div class="actions"><button class="btn primary" data-act="savePerson" data-id="'+(p.id||"")+'">저장</button>'+(isNew?'':'<button class="btn danger" data-act="delPerson" data-id="'+p.id+'">삭제</button>')+'</div>';
   openSheet(isNew?"사람 추가":p.name, h, function(){ $("#pName").focus && isNew && $("#pName").focus(); });
@@ -2545,7 +2557,7 @@ function searchResults(q){
     its.forEach(function(it){ shownItems[it.id] = 1; });
     return '<div class="srperson"><div class="srrow"><div class="srmain" data-act="openPerson" data-id="'+p.id+'"><b style="font-size:17px">'+srMark(p.name, q)+'</b> <span class="tiny muted">'+(g?esc(g.name):"")+'</span>'+
       (p.memo && srHit(p.memo, q) && !srHit(p.name, q) ? '<div class="small muted">'+srMark(p.memo, q, 60)+'</div>' : '')+'</div>'+
-      '<button class="btn sm" data-act="quickAdd" data-pid="'+p.id+'">＋ 제목</button></div>'+
+      (p.phone?'<a class="cbtn" href="tel:'+esc(p.phone.replace(/[^\d+]/g,""))+'" data-act="contacted" data-id="'+p.id+'" aria-label="전화">📞</a>':'')+'<button class="cbtn" data-act="msg" data-id="'+p.id+'" aria-label="메시지">💬</button><button class="cbtn" data-act="quickAdd" data-pid="'+p.id+'" aria-label="기도제목 추가">＋</button></div>'+
       (its.length ? its.map(function(it){ return srItemRow(it, "", false); }).join("") : '<div class="tiny muted" style="padding:2px 0 6px">기도 중인 제목 없음</div>')+'</div>';
   }));
   /* 2. 기도제목 (사람 칸에 이미 나온 것은 빼고) */
@@ -2585,6 +2597,7 @@ Object.assign(ACT, {
     var btn = document.querySelector('[data-radio="iStatus"] [data-v="answered"]'); if(btn) btn.click();
     setTimeout(function(){ var a = $("#iAns"); if(a){ a.focus(); a.scrollIntoView({block:"center"}); } }, 150);
   },
+  noPhone:function(){ toast("전화번호가 없습니다. 아래 정보에서 넣어 주세요"); var el=$("#pPhone"); if(el){ el.scrollIntoView({block:"center"}); el.focus(); } },
   srThanks:function(){ closeSheet(); UI.tab="answers"; UI.ansView="thanks"; UI.thanksQ = UI.searchQ || ""; render(); window.scrollTo(0,0); }
 });
 /* 찾기에서 응답을 적고 저장하면 다시 찾기 결과로 돌아온다 */
