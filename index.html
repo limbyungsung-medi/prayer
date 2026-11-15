@@ -342,11 +342,11 @@ mark{background:var(--accentSoft); color:var(--accent); border-radius:3px; paddi
 </div></nav>
 <input type="file" id="fileIn" accept=".json,.txt,application/json,text/plain" hidden>
 <input type="file" id="vcfIn" hidden>
-<input type="file" id="oatFileIn" accept=".txt,.json,text/plain,application/json" hidden>
+<input type="file" id="oatFileIn" accept=".txt,.json,.pdf,text/plain,application/json,application/pdf" hidden>
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-15-1";
+var APP_VERSION = "2026-11-15-3";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -2157,7 +2157,7 @@ function oatImportSheet(data){
   var y = data && data.year || Number(today().slice(0,4));
   var npray = data ? (data.prays||[]).length : 0, ngoal = data ? (data.goals||[]).length : 0;
   var h = data ? '<div class="card"><b>'+esc(data.owner||"이름 없음")+' · '+y+' OAT</b><div class="small muted">'+(data.head&&data.head.theme?esc(data.head.theme)+' · ':'')+'장기기도제목 '+npray+'가지 · 목표 '+ngoal+'개</div></div>'
-    : '<div class="small">형제가 보낸 OAT 파일을 고르거나, PDF의 글을 복사해 붙여넣으세요.</div><div class="actions"><button class="btn primary" data-act="oatPickFile">📂 OAT 파일 고르기</button></div>'+
+    : '<div class="small">OAT 파일(.txt)이나 <b>PDF</b>를 고르세요. PDF는 처음 한 번 인터넷이 필요합니다.</div><div class="actions"><button class="btn primary block" data-act="oatPickFile">📂 OAT 파일 · PDF 고르기</button></div>'+
       '<h3>또는 PDF 글 붙여넣기</h3><div class="tiny muted">"1. … 2. …"처럼 번호 달린 장기기도제목을 그대로 붙여넣으면 번호마다 기도제목으로 나뉩니다.</div><textarea id="oiPaste" style="min-height:120px;margin-top:6px"></textarea><div class="actions"><button class="btn sm" data-act="icPasteBtnOat">📋 붙여넣기</button></div>';
   h += '<h3>누구의 OAT인가요?</h3>'+radio("oiWho", data ? [["me","내 OAT"],["brother","형제의 OAT"]] : [["brother","형제의 OAT"]], data && !data.owner ? "me" : "brother")+
     '<div id="oiBroWrap"><label class="f">어느 형제의 사람 카드에 넣을까요</label><select id="oiPerson"><option value="">(고르세요)</option>'+S.people.slice().sort(function(a,b){ return a.name.localeCompare(b.name,"ko"); }).map(function(p){ return '<option value="'+p.id+'" '+(data&&data.owner&&p.name.indexOf(data.owner)>=0?"selected":"")+'>'+esc(p.name)+'</option>'; }).join("")+'</select>'+
@@ -2253,6 +2253,7 @@ var OAT_ACT = {
   oatDoImport:function(){
     var data=UI.oatImportData, who=radioVal("oiWho")||"brother";
     if(who==="me"){ if(!data) return; if(importMyOat(data)){ closeSheet(); UI.tab="oat"; render(); toast(data.year+" OAT를 넣었습니다"); } return; }
+    if(!data){ var ptxt = $("#oiPaste") ? $("#oiPaste").value : ""; if(!ptxt.trim()) return toast("파일을 고르거나 글을 붙여넣어 주세요"); var pd = parseOatLines(ptxt.split(/\r?\n/)); var ppid = $("#oiPerson").value; closeSheet(); oatPreviewSheet(pd, "붙여넣은 글"); var bb=document.querySelector('[data-radio="pvWho"] [data-v="brother"]'); if(bb) bb.click(); if(ppid) $("#pvPerson").value = ppid; return; }
     var pid=$("#oiPerson").value; if(!pid) return toast("형제를 골라 주세요");
     var y=Number(val("oiYear"))||Number(today().slice(0,4));
     var pasted = data ? null : parseNumberedText($("#oiPaste") ? $("#oiPaste").value : "");
@@ -2275,13 +2276,7 @@ Object.assign(ACT, OAT_ACT);
 document.addEventListener("change", function(e){
   if(e.target.id==="oatYearSel"){ UI.oatYear=Number(e.target.value); render(); }
 });
-$("#oatFileIn").addEventListener("change", function(e){
-  var f=e.target.files[0]; if(!f) return; var rd=new FileReader();
-  rd.onload=function(){ var d; try{ d=JSON.parse(rd.result); }catch(err){ d=null; }
-    if(!d || d.app!=="swgido-oat"){ toast("OAT 파일이 아닌 것 같아요"); return; }
-    closeSheet(); oatImportSheet(d); };
-  rd.readAsText(f); e.target.value="";
-});
+$("#oatFileIn").addEventListener("change", function(e){ var f=e.target.files[0]; e.target.value=""; if(f) oatPickedFile(f); });
 
 /* ============ 앱으로 설치 (주소창 없이 열리게) ============
    크롬 탭에서 열면 위에 주소창이 보인다. 설치된 앱(홈 화면 아이콘)으로 열면 주소창이 없다. */
@@ -2628,6 +2623,231 @@ function mergeExt(R){
   E.bibleN = Math.max(E.bibleN||0, R.bibleN||0); E.memN = Math.max(E.memN||0, R.memN||0);
 }
 document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="visible" && harvestExt()){ save(); if(UI.tab==="today" && !document.getElementById("ov")) render(); } });
+
+
+/* ============ PDF·글에서 OAT 읽기 ============
+   PDF를 고르면 pdf.js(처음 한 번 인터넷에서 받아 옴)로 글자와 위치를 꺼내고,
+   두 칸(왼쪽·오른쪽)으로 된 표는 칸을 나눠 읽은 뒤 주제·약속·장기기도제목·영역별 목표로 나눈다.
+   바로 저장하지 않고 미리보기에서 고친 뒤 넣는다. */
+var PDFJS_BASE = window.PDFJS_BASE || "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/";
+function loadPdfjs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  return new Promise(function(res, rej){
+    var s = document.createElement("script"); s.src = PDFJS_BASE + "pdf.min.js";
+    s.onload = function(){ if(!window.pdfjsLib) return rej(new Error("PDF 읽기 도구를 불러오지 못했습니다")); window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + "pdf.worker.min.js"; res(window.pdfjsLib); };
+    s.onerror = function(){ rej(new Error(navigator.onLine ? "PDF 읽기 도구를 불러오지 못했습니다" : "처음 PDF를 읽을 때는 인터넷이 필요합니다")); };
+    document.head.appendChild(s);
+  });
+}
+/* 한 쪽의 글자 조각들 → 줄들 (두 칸이면 왼쪽 칸 줄 다음에 오른쪽 칸 줄)
+   한글 문서(HWP)에서 만든 PDF는 쉼표·괄호를 글자 묶음 한가운데에 따로 그려 넣으므로, 위치를 보고 제자리에 다시 끼운다. */
+var PUNCT = /^[,.()（）\[\]:;·'"“”‘’\-=~]$/;
+function charW(c){ return /\s/.test(c) ? 0.45 : /[A-Za-z0-9]/.test(c) ? 0.6 : 1; }
+function spliceRun(run, marks){
+  var chars = run.s.split(""), wsum = 0; chars.forEach(function(c){ wsum += charW(c); });
+  var unit = run.w > 0 && wsum > 0 ? run.w / wsum : run.h, pos = [], acc = 0;
+  chars.forEach(function(c){ pos.push(run.x + acc*unit); acc += charW(c); }); pos.push(run.x + acc*unit);
+  var ins = marks.map(function(m){
+    var best = 0, bd = 1e9; for(var i=0;i<=chars.length;i++){ var dd = Math.abs(pos[i] - m.x); if(dd < bd){ bd = dd; best = i; } }
+    if(/[,.):;)）\]”’]/.test(m.s)) while(best > 0 && /\s/.test(chars[best-1])) best--;      /* 닫는 것은 앞 낱말에 붙임 */
+    else if(/[(（\[“‘]/.test(m.s)) while(best < chars.length && /\s/.test(chars[best])) best++; /* 여는 것은 뒤 낱말에 붙임 */
+    return {i:best, s:m.s};
+  }).sort(function(a,b){ return b.i - a.i; });
+  ins.forEach(function(m){ chars.splice(m.i, 0, m.s); });
+  return chars.join("");
+}
+function pdfPageLines(items, width){
+  var it = items.filter(function(x){ return x.str && x.str.trim(); }).map(function(x){ return {s:x.str, x:x.transform[4], y:x.transform[5], w:x.width||0, h:Math.abs(x.transform[3])||10}; });
+  if(!it.length) return [];
+  it.sort(function(a,b){ return b.y-a.y || a.x-b.x; });
+  var rows = [], cur = null;
+  it.forEach(function(x){ if(cur && Math.abs(cur.y - x.y) <= Math.max(2, x.h*0.35)) cur.items.push(x); else { cur = {y:x.y, items:[x]}; rows.push(cur); } });
+  /* 쉼표·괄호를 글자 묶음 안에 끼우기 */
+  rows.forEach(function(r){
+    var big = r.items.filter(function(x){ return !PUNCT.test(x.s.trim()); }), keep = big.slice();
+    var marks = big.map(function(){ return []; });
+    r.items.filter(function(x){ return PUNCT.test(x.s.trim()); }).forEach(function(p){
+      for(var i=0;i<big.length;i++){ var b = big[i]; if(p.x > b.x + 1 && p.x < b.x + b.w - 1){ marks[i].push({x:p.x, s:p.s.trim()}); return; } }
+      keep.push(p);
+    });
+    big.forEach(function(b, i){ if(marks[i].length) b.s = spliceRun(b, marks[i]); });
+    r.items = keep.sort(function(a,b){ return a.x-b.x; });
+  });
+  /* 줄 안에서 넓은 틈으로 조각 나누기 */
+  var segs = [];
+  rows.forEach(function(r){
+    var seg = null;
+    r.items.forEach(function(x){
+      if(seg && x.x - seg.x2 > Math.max(18, x.h*1.6)){ segs.push(seg); seg = null; }
+      if(!seg) seg = {y:r.y, x:x.x, x2:x.x+x.w, h:x.h, parts:[x]};
+      else { seg.parts.push(x); seg.x2 = Math.max(seg.x2, x.x+x.w); }
+    });
+    if(seg) segs.push(seg);
+  });
+  var text = function(g){ var out = "", px = null; g.parts.forEach(function(p){ if(px != null && p.x - px > p.h*0.25 && !/\s$/.test(out) && !/^[,.)）:;]/.test(p.s)) out += " "; out += p.s; px = p.x + p.w; }); return out.replace(/\s+/g," ").trim(); };
+  /* 오른쪽 칸의 왼쪽 끝(R): 쪽 가운데쯤에서 시작하는 조각이 가장 많이 모이는 x */
+  var cand = {}; segs.forEach(function(g){ if(g.x > width*0.35 && g.x < width*0.7){ var k = Math.round(g.x/6)*6; cand[k] = (cand[k]||0)+1; } });
+  var R = null, best = 0; Object.keys(cand).forEach(function(k){ if(cand[k] > best){ best = cand[k]; R = Number(k); } });
+  var twoCol = R && best >= 5 && best >= segs.length*0.15;
+  var cols = twoCol ? [[], []] : [[]];
+  segs.forEach(function(g){
+    var right = twoCol && g.x >= R - 8;
+    /* "강조사항:"처럼 왼쪽 칸이 쌍점으로 끝나면 같은 줄 오른쪽 조각은 그 값이다 */
+    if(right){ var sameRow = cols[0].filter(function(q){ return Math.abs(q.y - g.y) <= 2; }), lab = sameRow.length ? sameRow[sameRow.length-1] : null; if(lab && /[:：]\s*$/.test(text(lab))){ lab.parts = lab.parts.concat(g.parts); lab.x2 = g.x2; return; } }
+    cols[right ? 1 : 0].push(g);
+  });
+  var out = [];
+  cols.forEach(function(c){
+    var byY = []; c.forEach(function(g){ var row = null; for(var i=0;i<byY.length;i++) if(Math.abs(byY[i].y - g.y) <= 2){ row = byY[i]; break; } if(!row){ row = {y:g.y, g:[]}; byY.push(row); } row.g.push(g); });
+    byY.sort(function(a,b){ return b.y - a.y; }).forEach(function(r){ out.push(r.g.sort(function(a,b){ return a.x-b.x; }).map(text).join(" ")); });
+  });
+  return out.filter(Boolean);
+}
+function rowsToLines(rows){ return rows.map(function(r){ return r.s; }).filter(Boolean); }
+function pdfToLines(file){
+  return loadPdfjs().then(function(lib){
+    return file.arrayBuffer().then(function(buf){ return lib.getDocument({data:buf}).promise; });
+  }).then(function(doc){
+    var all = [], chain = Promise.resolve();
+    for(var i=1; i<=doc.numPages && i<=8; i++) (function(n){ chain = chain.then(function(){ return doc.getPage(n).then(function(pg){ var vp = pg.getViewport({scale:1}); return pg.getTextContent().then(function(tc){ all = all.concat(pdfPageLines(tc.items, vp.width)); }); }); }); })(i);
+    return chain.then(function(){ return all; });
+  });
+}
+
+/* 줄바꿈으로 낱말이 끊긴 곳은 붙이고("사랑"+"하기를" → "사랑하기를"), 아니면 띄어 잇는다 */
+function joinKo(a, b){
+  a = a.replace(/\s+$/,""); b = b.replace(/^\s+/,"");
+  var first = b.split(/[\s,.]/)[0];
+  if(/[가-힣]$/.test(a) && /^(와|과|을|를|의|에|에게|에서|는|은|로|으로|며|서|들|들을|들이|들의|니다|습니다)$/.test(first)) return a + b;
+  return a + " " + b;
+}
+/* ---- 줄들 → OAT ---- */
+var AREA_RE = [["basic",/^(★|☆|■|●|◆)?\s*basic\b/i],["ministry",/^(★|☆|■|●|◆)?\s*ministry\b/i],["character",/^(★|☆|■|●|◆)?\s*character\b/i],["personal",/^(★|☆|■|●|◆)?\s*personal(\s*life)?\b/i],["others",/^(★|☆|■|●|◆)?\s*others?\b/i]];
+function squeezeTitle(t){ t = t.trim(); return /^([가-힣]\s){1,}[가-힣]$/.test(t) ? t.replace(/\s/g,"") : t.replace(/\s+/g," "); }
+function normRef(r){ return String(r||"").replace(/\s+/g," ").replace(/^([가-힣]+)\s*(\d)/,"$1 $2").replace(/\s*,\s*/g,",").replace(/(\d)\s*절$/,"$1").trim(); }
+function guessCheck(title){
+  var t = title.replace(/\s/g,"");
+  if(/경건|QT|큐티/i.test(t)) return {t:"daily"};
+  if(/성경읽기|통독/.test(t)) return {t:"auto", src:"read"};
+  if(/암송/.test(t)) return {t:"auto", src:"memory"};
+  if(/^기도$|기도생활/.test(t)) return {t:"auto", src:"pray"};
+  if(/교제/.test(t)) return {t:"auto", src:"contact"};
+  if(/성경공부/.test(t)) return {t:"week", n:1};
+  if(/체력|운동|건강/.test(t)) return {t:"week", n:3};
+  if(/PEP/i.test(t)) return {t:"auto", src:"review"};
+  if(/시간사용/.test(t)) return {t:"daily"};
+  if(/Finance|물질/i.test(t)) return {t:"none"};
+  return {t:"reflect"};
+}
+function parseOatLines(lines){
+  var d = {app:"swgido-oat", v:1, owner:"", year:0, head:{theme:"", verses:"", emphasis:"", motto:""}, prays:[], goals:[]};
+  var mode = null, area = null, cur = null, prayHead = false;
+  var full = lines.join("\n"), ym = /(20\d\d)\s*년?/.exec(full); d.year = ym ? Number(ym[1]) : Number(today().slice(0,4));
+  var on = /20\d\d\s*년?\s*([가-힣]{2,4})\s*(?:의\s*)?(?:OAT|장기\s*기도)/i.exec(full); if(on) d.owner = on[1];
+  var endCur = function(){ cur = null; };
+  lines.forEach(function(raw){
+    var l = raw.replace(/\s+/g," ").trim(); if(!l) return;
+    var m;
+    if((m = /^주\s*제\s*[:：]\s*(.+)$/.exec(l))){ d.head.theme = m[1].replace(/\s*,\s*/g,", ").trim(); endCur(); return; }
+    if((m = /^약\s*속\s*의?\s*말\s*씀\s*[:：]\s*(.+)$/.exec(l)) && mode!=="pray"){ d.head.verses = m[1].replace(/\s*,\s*/g,", ").replace(/([가-힣])(\d)/g,"$1 $2").replace(/(\d)\s+(?=[가-힣])/g,"$1, ").trim(); endCur(); return; }
+    if((m = /^강\s*조\s*사\s*항\s*[:：]\s*(.+)$/.exec(l))){ d.head.emphasis = m[1].trim(); endCur(); return; }
+    if(/전심전력|진보를 모든 사람/.test(l)){ d.head.motto = (d.head.motto ? d.head.motto + " · " : "") + l.replace(/["“”]/g,"").replace(/\(\s*([가-힣]+)\s*(\d)/,"($1 $2").trim(); endCur(); return; }
+    if(/장기\s*기도\s*제목/.test(l)){ mode = "pray"; prayHead = true; endCur(); return; }
+    for(var i=0;i<AREA_RE.length;i++) if(AREA_RE[i][1].test(l)){ mode = "goal"; area = AREA_RE[i][0]; endCur(); var rest = l.replace(AREA_RE[i][1],"").replace(/^\s*\([^)]*\)\s*/,"").trim(); if((m = /^(\d{1,2})\s*[.)]\s*(.+)$/.exec(rest))) l = rest; else return; break; }
+    m = /^(\d{1,2})\s*[.)]\s*(.+)$/.exec(l);
+    if(m){
+      var body = m[2].trim();
+      if(mode === "goal" && area){
+        var tt, dt = "", ref = "", known = /^(Man\s*power|Finance\s*power|PEP\s*Time|Leadership\s*계발|Personal\s*Life)\s*[:：]?\s*(.*)$/i.exec(body), mm = /^([^:：]{1,24})[:：]\s*(.*)$/.exec(body);
+        if(known){ tt = known[1].replace(/\s+/g," "); dt = known[2]; }
+        else if(mm){ tt = mm[1]; dt = mm[2]; }
+        else { var mp = /^([^(（]{1,20})\s*[(（]([^)）]*)[)）]\s*(.*)$/.exec(body); if(mp){ tt = mp[1]; ref = /\d/.test(mp[2]) ? normRef(mp[2]) : ""; dt = (ref ? "" : mp[2]+" ") + mp[3]; } else { var sp = body.split(/\s+/); tt = sp.shift(); dt = sp.join(" "); } }
+        cur = {area:area, title:squeezeTitle(tt), detail:dt.trim(), ref:ref, people:[]}; cur.check = guessCheck(cur.title); d.goals.push(cur);
+      } else {
+        mode = "pray"; cur = {text:body, ref:""}; d.prays.push(cur);
+      }
+      return;
+    }
+    /* 이어지는 줄 */
+    if(cur){ if(cur.text != null) cur.text = joinKo(cur.text, l); else cur.detail = cur.detail ? joinKo(cur.detail, l) : l; return; }
+    if(mode === "pray" && !d.head.motto && /^[-–]/.test(l)) d.head.motto = l.replace(/^[-–]\s*|\s*[-–]$/g,"");
+  });
+  d.prays.forEach(function(p){
+    p.text = p.text.replace(/\s+/g," ").trim();
+    var r = /[(（]\s*([가-힣0-9]+\s*\d+\s*[:：장]\s*[\d,\s~\-–]*)\s*절?\s*[)）]\s*\.?\s*$/.exec(p.text);
+    if(r){ p.ref = normRef(r[1].replace(/[：]/g,":").replace(/[~–]/g,"-")); p.text = p.text.slice(0, r.index).trim(); }
+    p.text = p.text.replace(/\s*\.$/,"");
+  });
+  d.goals.forEach(function(g){ g.detail = g.detail.replace(/\s+/g," ").trim(); });
+  return d;
+}
+
+/* ---- 미리보기: 나눈 결과를 보고 고친 뒤 넣기 ---- */
+function oatToEditText(d){
+  var areaTxt = {}; AREAS.forEach(function(a){ areaTxt[a[0]] = d.goals.filter(function(g){ return g.area===a[0]; }).map(function(g){ return g.title + (g.detail ? ": " + g.detail : "") + (g.ref ? " (" + g.ref + ")" : ""); }).join("\n"); });
+  return {prays: d.prays.map(function(p, i){ return (i+1) + ". " + p.text + (p.ref ? " (" + p.ref + ")" : ""); }).join("\n"), areas: areaTxt};
+}
+function oatPreviewSheet(d, src){
+  var e = oatToEditText(d);
+  var h = '<div class="small">'+esc(src||"")+'에서 이렇게 나눴습니다. <b>잘못 나뉜 곳은 여기서 고친 뒤</b> 넣으세요.</div>'+
+    '<h3>누구의 OAT인가요?</h3>'+radio("pvWho", [["me","내 OAT"],["brother","형제·가족의 OAT"]], "me")+
+    '<div id="pvBro" style="display:none"><label class="f">누구의 사람 카드에 넣을까요</label><select id="pvPerson"><option value="">(고르세요)</option>'+S.people.slice().sort(function(a,b){ return a.name.localeCompare(b.name,"ko"); }).map(function(p){ return '<option value="'+p.id+'" '+(d.owner && p.name.indexOf(d.owner)>=0 ? "selected" : "")+'>'+esc(p.name)+'</option>'; }).join("")+'</select></div>'+
+    '<div class="row"><div style="flex:1"><label class="f">해</label><input type="number" id="pvYear" value="'+d.year+'"></div><div style="flex:1"><label class="f">이름</label><input type="text" id="pvOwner" value="'+esc(d.owner)+'"></div></div>'+
+    '<label class="f">주제</label><input type="text" id="pvTheme" value="'+esc(d.head.theme)+'">'+
+    '<label class="f">약속의 말씀 (쉼표로 나눔)</label><input type="text" id="pvVerses" value="'+esc(d.head.verses)+'">'+
+    '<label class="f">강조사항</label><input type="text" id="pvEmph" value="'+esc(d.head.emphasis)+'">'+
+    '<label class="f">마무리 말씀</label><input type="text" id="pvMotto" value="'+esc(d.head.motto)+'">'+
+    '<label class="f">장기기도제목 '+d.prays.length+'가지 <span class="tiny muted">(한 줄에 하나 · 끝에 (말씀))</span></label><textarea id="pvPrays" style="min-height:'+(d.prays.length?220:80)+'px">'+esc(e.prays)+'</textarea>'+
+    AREAS.map(function(a){ var n = d.goals.filter(function(g){ return g.area===a[0]; }).length; return '<label class="f">★ '+a[1]+' '+n+' <span class="tiny muted">(한 줄에 하나 · "제목: 내용")</span></label><textarea id="pvA_'+a[0]+'" style="min-height:'+(n?Math.min(220, 50+n*34):60)+'px">'+esc(e.areas[a[0]])+'</textarea>'; }).join("")+
+    '<div class="actions"><button class="btn primary block" data-act="pvSave">넣기</button></div>';
+  openSheet("📄 OAT 미리보기", h);
+  RADIO_HOOK.pvWho = function(v){ $("#pvBro").style.display = v==="brother" ? "" : "none"; };
+  UI.pvOld = d;
+}
+function oatFromPreview(){
+  var old = UI.pvOld || {goals:[]}, d = {app:"swgido-oat", v:1, owner:val("pvOwner"), year:Number(val("pvYear"))||Number(today().slice(0,4)),
+    head:{theme:val("pvTheme"), verses:val("pvVerses"), emphasis:val("pvEmph"), motto:val("pvMotto")}, prays:[], goals:[]};
+  $("#pvPrays").value.split("\n").forEach(function(l){ l = l.replace(/^\s*\d{1,2}\s*[.)]\s*/,"").trim(); if(!l) return; var r = /\(([^()]*\d[^()]*)\)\s*$/.exec(l); d.prays.push(r ? {text:l.slice(0,r.index).trim(), ref:normRef(r[1])} : {text:l, ref:""}); });
+  AREAS.forEach(function(a){
+    $("#pvA_"+a[0]).value.split("\n").forEach(function(l){
+      l = l.replace(/^\s*\d{1,2}\s*[.)]\s*/,"").trim(); if(!l) return;
+      var m = /^([^:：]{1,24})[:：]\s*(.*)$/.exec(l), title = m ? m[1].trim() : l, det = m ? m[2].trim() : "", ref = "";
+      var r = /\(([^()]*\d[^()]*)\)\s*$/.exec(det); if(r){ ref = normRef(r[1]); det = det.slice(0, r.index).trim(); }
+      var prev = old.goals.filter(function(g){ return g.title===title; })[0];
+      d.goals.push({area:a[0], title:title, detail:det, ref:ref, check:prev ? prev.check : guessCheck(title), people:prev ? prev.people : []});
+    });
+  });
+  return d;
+}
+Object.assign(ACT, {
+  pvSave:function(){
+    var d = oatFromPreview(), who = radioVal("pvWho") || "me";
+    if(!d.prays.length && !d.goals.length && !d.head.theme) return toast("넣을 내용이 없습니다");
+    if(who === "me"){ if(importMyOat(d)){ closeSheet(); UI.tab = "oat"; render(); toast(d.year+" OAT를 넣었습니다 · 목표를 눌러 점검 방식을 고칠 수 있습니다"); } return; }
+    var pid = $("#pvPerson").value; if(!pid) return toast("누구의 카드에 넣을지 골라 주세요");
+    var n = importBrotherOat(pid, d.year, d, null); closeSheet(); render(); toast(person(pid).name+"님 카드에 기도제목 "+n+"개를 넣었습니다");
+  }
+});
+function oatPickedFile(f){
+  var isPdf = /pdf$/i.test(f.type||"") || /\.pdf$/i.test(f.name||"");
+  if(isPdf){
+    toast("PDF를 읽는 중입니다…");
+    pdfToLines(f).then(function(lines){
+      if(!lines.join("").trim()) throw new Error("이 PDF에서 글자를 찾지 못했습니다 (사진으로 만든 PDF일 수 있습니다)");
+      var d = parseOatLines(lines); closeSheet(); oatPreviewSheet(d, f.name);
+    }).catch(function(e){ toast(e.message || "PDF를 읽지 못했습니다"); });
+    return;
+  }
+  var rd = new FileReader();
+  rd.onload = function(){
+    var d = null; try{ d = JSON.parse(rd.result); }catch(err){}
+    if(d && d.app === "swgido-oat"){ closeSheet(); oatImportSheet(d); return; }
+    var txt = String(rd.result||"");
+    if(/\d\s*[.)]/.test(txt) && txt.length < 200000){ closeSheet(); oatPreviewSheet(parseOatLines(txt.split(/\r?\n/)), f.name); return; }
+    toast("OAT 파일이나 PDF가 아닌 것 같습니다");
+  };
+  rd.readAsText(f);
+}
 
 load(); if(harvestExt()) save({noSync:true}); seedQtPlan(); if(dedupeGroups()) save(); else save({noSync:true}); render(); Sync.onOpen();
 /* 카카오톡 등에서 "공유 → 쉬지 않는 기도"로 들어온 글 */
