@@ -346,7 +346,7 @@ mark{background:var(--accentSoft); color:var(--accent); border-radius:3px; paddi
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-15-3";
+var APP_VERSION = "2026-11-15-4";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -2167,13 +2167,34 @@ function oatImportSheet(data){
   RADIO_HOOK.oiWho = function(v){ $("#oiBroWrap").style.display = v==="brother" ? "" : "none"; };
   UI.oatImportData = data || null;
 }
+/* 같은 해 OAT가 이미 있으면 새 파일에 들어 있는 부분만 바꾼다
+   (OAT PDF와 장기기도제목 PDF를 따로따로 넣어도 서로 지워지지 않게) */
 function importMyOat(data){
-  var y = Number(data.year), exists = S.oat.some(function(r){ return r.year===y; });
-  if(exists && !confirm(y+" OAT가 이미 있습니다. 파일 내용으로 바꿀까요? (지금까지의 체크·점검 기록은 남습니다)")) return false;
-  S.oat = S.oat.filter(function(r){ return r.year!==y; });
-  if(data.head) S.oat.push(Object.assign({}, data.head, {id:uid(), kind:"year", year:y}));
-  (data.prays||[]).forEach(function(p, i){ S.oat.push(Object.assign({status:"active"}, p, {id:uid(), kind:"pray", year:y, order:i+1})); });
-  (data.goals||[]).forEach(function(g, i){ var o = Object.assign({}, g, {id:uid(), kind:"goal", year:y, order:i+1}); o.people = linkPeopleNames(g.people); S.oat.push(o); });
+  var y = Number(data.year), H = data.head || {};
+  var hasHead = !!(H.theme || H.verses || H.emphasis || H.motto), hasPrays = !!(data.prays||[]).length, hasGoals = !!(data.goals||[]).length;
+  var exists = S.oat.some(function(r){ return r.year===y; });
+  if(exists){
+    var parts = []; if(hasHead) parts.push("주제·약속의 말씀"); if(hasPrays) parts.push("장기기도제목 "+data.prays.length+"가지"); if(hasGoals) parts.push("목표 "+data.goals.length+"개");
+    var keepParts = []; if(!hasPrays && oatPrays(y).length) keepParts.push("장기기도제목"); if(!hasGoals && oatGoals(y).length) keepParts.push("목표");
+    if(!confirm(y+" OAT가 이미 있습니다.\n\n• 새로 넣을 것: "+parts.join(", ")+(keepParts.length ? "\n• 그대로 남는 것: "+keepParts.join(", ") : "")+"\n• 체크·점검·응답 기록도 남습니다\n\n넣을까요?")) return false;
+  }
+  if(hasHead){
+    var h0 = oatHead(y); if(!h0){ h0 = {id:uid(), kind:"year", year:y}; S.oat.push(h0); }
+    ["theme","verses","emphasis","motto"].forEach(function(k){ if(H[k]) h0[k] = H[k]; });
+  }
+  if(hasPrays){
+    var oldP = {}; oatPrays(y).forEach(function(p){ oldP[p.text] = p; });
+    S.oat = S.oat.filter(function(r){ return !(r.year===y && r.kind==="pray"); });
+    data.prays.forEach(function(p, i){ var o = oldP[p.text]; S.oat.push(Object.assign({status:"active"}, p, o ? {status:o.status, answerDate:o.answerDate, answerText:o.answerText} : {}, {id:o ? o.id : uid(), kind:"pray", year:y, order:i+1})); });
+  }
+  if(hasGoals){
+    var oldG = {}; oatGoals(y).forEach(function(g){ oldG[g.title] = g; });
+    S.oat = S.oat.filter(function(r){ return !(r.year===y && r.kind==="goal"); });
+    data.goals.forEach(function(g, i){ var o = oldG[g.title], n = Object.assign({}, g, {id:o ? o.id : uid(), kind:"goal", year:y, order:i+1});
+      n.people = linkPeopleNames(g.people && g.people.length ? g.people : (o ? o.people : []));
+      if(o && o.check && o.check.t) n.check = o.check;   /* 고쳐 둔 점검 방식은 그대로 */
+      S.oat.push(n); });
+  }
   UI.oatYear = y; save(); return true;
 }
 function importBrotherOat(pid, y, data, pasted){
@@ -2189,8 +2210,10 @@ function importBrotherOat(pid, y, data, pasted){
     if(ex){ ex.detail = r.detail || ex.detail; ex.verse = r.verse || ex.verse; ex.updated = today(); }
     else S.items.push({id:uid(), personId:pid, title:r.title, detail:r.detail||"", verse:r.verse||"", source:tag, oatTag:tag, created:today(), updated:today(), due:"", urgent:false, urgentChecked:today(), status:"active", prayed:[], focus:false});
   });
-  /* 새 OAT에 없는 예전 제목: 응답 기록이 없으면 지우고, 있으면 남김 */
-  S.items = S.items.filter(function(it){ return !(it.personId===pid && it.oatTag===tag && !seen[it.title] && it.status==="active"); });
+  /* 새 OAT에 없는 예전 제목: 응답 기록이 없으면 지움 — 단, 이번에 들어온 종류(주제 / 장기기도제목)만 */
+  var themeTitle = function(t){ return t.indexOf(y+" 주제:")===0; };
+  var newTheme = rows.some(function(r){ return themeTitle(r.title); }), newPray = rows.some(function(r){ return !themeTitle(r.title); });
+  S.items = S.items.filter(function(it){ if(!(it.personId===pid && it.oatTag===tag && !seen[it.title] && it.status==="active")) return true; return themeTitle(it.title) ? !newTheme : !newPray; });
   if(p.circle!=="daily" && p.circle!=="weekly"){ /* 한 달 원이면 그대로 */ }
   save(); return rows.length;
 }
