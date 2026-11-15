@@ -346,7 +346,7 @@ mark{background:var(--accentSoft); color:var(--accent); border-radius:3px; paddi
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-13-1";
+var APP_VERSION = "2026-11-15-1";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
@@ -396,6 +396,7 @@ function load(){
   ["people","items","notes","groups","promises","oat","reviews","qt","qtplan"].forEach(function(k){ if(!Array.isArray(S[k])) S[k]=[]; });
   if(!S.logs) S.logs = {};
   if(!S.tomb) S.tomb = {};
+  if(!S.ext || typeof S.ext!=='object') S.ext = {read:{}, mem:{}, bibleN:0, memN:0};
   S.notes.forEach(function(n){ if(n.source==="주일설교") n.source="주일 메시지"; });
   if(!S.settings.sync) S.settings.sync = {};
   SNAP = snapshot(true);
@@ -413,6 +414,7 @@ function snapshot(fillMissing){
   Object.keys(S.logs).forEach(function(d){ var L=S.logs[d]; if(fillMissing && !L.mt) L.mt = now; cur["log:"+d] = recJson(L); });
   if(fillMissing && !S.settings.smt) S.settings.smt = now;
   cur["settings"] = JSON.stringify(sharedSettings(S.settings));
+  cur["ext"] = JSON.stringify(S.ext||{});
   return cur;
 }
 function stamp(){
@@ -420,7 +422,8 @@ function stamp(){
   KINDS.forEach(function(kind){ S[kind].forEach(function(r){ var k=kind+":"+r.id, j=recJson(r); cur[k]=j; if(!r.mt || (SNAP && SNAP[k]!==j)) r.mt=now; }); });
   Object.keys(S.logs).forEach(function(d){ var L=S.logs[d], k="log:"+d, j=recJson(L); cur[k]=j; if(!L.mt || (SNAP && SNAP[k]!==j)) L.mt=now; });
   var sj = JSON.stringify(sharedSettings(S.settings)); cur["settings"]=sj; if(SNAP && SNAP["settings"]!==sj) S.settings.smt=now;
-  if(SNAP) Object.keys(SNAP).forEach(function(k){ if(!(k in cur) && k!=="settings") S.tomb[k]=now; });
+  cur["ext"] = JSON.stringify(S.ext||{});
+  if(SNAP) Object.keys(SNAP).forEach(function(k){ if(!(k in cur) && k!=="settings" && k!=="ext") S.tomb[k]=now; });
   var cutoff = now - 200*864e5; Object.keys(S.tomb).forEach(function(k){ if(S.tomb[k]<cutoff) delete S.tomb[k]; });
   var changed = !SNAP || Object.keys(cur).some(function(k){ return SNAP[k]!==cur[k]; }) || Object.keys(SNAP).length!==Object.keys(cur).length;
   SNAP = cur;
@@ -466,6 +469,7 @@ function mergeInto(R){
     L.mt = Math.max(a.mt||0, b.mt||0);
     S.logs[d] = L;
   });
+  mergeExt(R.ext);
   if(R.settings && (R.settings.smt||0) > (S.settings.smt||0)){ S.settings.cap = R.settings.cap || S.settings.cap; S.settings.tpl = Object.assign({}, S.settings.tpl, R.settings.tpl||{}); S.settings.smt = R.settings.smt; }
   S.tomb = T;
   SNAP = snapshot(false);
@@ -488,7 +492,7 @@ function dedupeGroups(){
   S.groups = S.groups.filter(function(g){ return !drop[g.id]; });
   return true;
 }
-function sharedState(){ var st={}; Object.keys(S.settings).forEach(function(k){ if(LOCAL_SETTINGS.indexOf(k)<0) st[k]=S.settings[k]; }); return {v:1, app:"swgido", groups:S.groups, people:S.people, items:S.items, notes:S.notes, promises:S.promises, oat:S.oat, reviews:S.reviews, qt:S.qt, qtplan:S.qtplan, logs:S.logs, tomb:S.tomb, settings:st}; }
+function sharedState(){ harvestExt(); var st={}; Object.keys(S.settings).forEach(function(k){ if(LOCAL_SETTINGS.indexOf(k)<0) st[k]=S.settings[k]; }); return {v:1, app:"swgido", groups:S.groups, people:S.people, items:S.items, notes:S.notes, promises:S.promises, oat:S.oat, reviews:S.reviews, qt:S.qt, qtplan:S.qtplan, ext:S.ext, logs:S.logs, tomb:S.tomb, settings:st}; }
 function log(d){ if(!S.logs[d]) S.logs[d] = {steps:{}, thanks:["","",""], prayed:[], praiseMemo:"", confess:""}; var L=S.logs[d]; if(!L.steps) L.steps={}; if(!L.thanks) L.thanks=["","",""]; if(!L.prayed) L.prayed=[]; return L; }
 
 /* ============ 조회 ============ */
@@ -1881,10 +1885,10 @@ function weekVerse(t, head){ var v = splitVerses(head && head.verses); return v.
 
 /* ---- 다른 앱 기록 읽기 (같은 주소 limbyungsung-medi.github.io 아래라 같은 휴대폰이면 읽을 수 있음) ---- */
 function lsJson(k){ try{ return JSON.parse(localStorage.getItem(k) || "null"); }catch(e){ return null; } }
-function bibleReadOn(d){ var m = lsJson("bible_readdates_v1"); return !!(m && m[d]); }
-function bibleProgress(){ var m = lsJson("bible_read_v1"); if(!m) return null; var n = Object.keys(m).filter(function(k){ return m[k]; }).length; return {n:n, pct:Math.round(n/1189*1000)/10}; }
-function memoryOn(d){ var s = lsJson("malsseum-amsong-v1"); var l = s && s.log && s.log[d]; return l ? (l.rev||0) + ((l.newIds||[]).length) : 0; }
-function memoryTotal(){ var s = lsJson("malsseum-amsong-v1"); return s && s.mylist ? s.mylist.length : null; }
+function bibleReadOn(d){ var m = lsJson("bible_readdates_v1"); return !!((m && m[d]) || (S.ext && S.ext.read[d])); }
+function bibleProgress(){ var m = lsJson("bible_read_v1"); var n = m ? Object.keys(m).filter(function(k){ return m[k]; }).length : 0; n = Math.max(n, (S.ext && S.ext.bibleN) || 0); if(!n) return null; return {n:n, pct:Math.round(n/1189*1000)/10}; }
+function memoryOn(d){ var s = lsJson("malsseum-amsong-v1"); var l = s && s.log && s.log[d]; return Math.max(l ? (l.rev||0) + ((l.newIds||[]).length) : 0, (S.ext && S.ext.mem[d]) || 0); }
+function memoryTotal(){ var s = lsJson("malsseum-amsong-v1"); var n = Math.max(s && s.mylist ? s.mylist.length : 0, (S.ext && S.ext.memN) || 0); return n || null; }
 function contactedOn(d){ return S.people.filter(function(p){ return p.lastContact===d; }).length; }
 function thanksOn(d){ var L = S.logs[d]; if(!L) return 0; return (L.thanks||[]).filter(function(x){ return x && x.trim(); }).length + (L.evening && L.evening.thanks ? 1 : 0); }
 function reviewOf(wk){ for(var i=0;i<S.reviews.length;i++) if(S.reviews[i].id==="rv-"+wk) return S.reviews[i]; return null; }
@@ -2603,7 +2607,29 @@ Object.assign(ACT, {
 /* 찾기에서 응답을 적고 저장하면 다시 찾기 결과로 돌아온다 */
 (function(){ var orig = ACT.saveItem; ACT.saveItem = function(b, e){ var back = UI.backToSearch; UI.backToSearch = false; orig(b, e); if(back) setTimeout(function(){ searchSheet(UI.searchQ); }, 50); }; })();
 
-load(); seedQtPlan(); if(dedupeGroups()) save(); else save({noSync:true}); render(); Sync.onOpen();
+
+/* ---- 성경읽기·암송 기록을 기기 사이에 나눔 ----
+   두 앱의 기록은 그 기기(그 브라우저) 안에만 있으므로, 기도앱이 읽은 날짜만 모아 S.ext에 담아
+   구글 드라이브 동기화로 다른 기기에도 보낸다. (본문·암송 구절 자체는 보내지 않고 "그날 했는가"만) */
+function harvestExt(){
+  if(!S.ext) S.ext = {read:{}, mem:{}, bibleN:0, memN:0};
+  var E = S.ext, ch = false, cut = addDays(today(), -400);
+  var rd = lsJson("bible_readdates_v1"); if(rd) Object.keys(rd).forEach(function(d){ if(rd[d] && d >= cut && !E.read[d]){ E.read[d] = 1; ch = true; } });
+  var bm = lsJson("bible_read_v1"); if(bm){ var n = Object.keys(bm).filter(function(k){ return bm[k]; }).length; if(n > (E.bibleN||0)){ E.bibleN = n; ch = true; } }
+  var ms = lsJson("malsseum-amsong-v1");
+  if(ms && ms.log) Object.keys(ms.log).forEach(function(d){ var l = ms.log[d]; var v = (l.rev||0) + ((l.newIds||[]).length); if(v > 0 && d >= cut && v > (E.mem[d]||0)){ E.mem[d] = v; ch = true; } });
+  if(ms && ms.mylist && ms.mylist.length > (E.memN||0)){ E.memN = ms.mylist.length; ch = true; }
+  return ch;
+}
+function mergeExt(R){
+  if(!R) return; var E = S.ext;
+  Object.keys(R.read||{}).forEach(function(d){ E.read[d] = 1; });
+  Object.keys(R.mem||{}).forEach(function(d){ E.mem[d] = Math.max(E.mem[d]||0, R.mem[d]||0); });
+  E.bibleN = Math.max(E.bibleN||0, R.bibleN||0); E.memN = Math.max(E.memN||0, R.memN||0);
+}
+document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="visible" && harvestExt()){ save(); if(UI.tab==="today" && !document.getElementById("ov")) render(); } });
+
+load(); if(harvestExt()) save({noSync:true}); seedQtPlan(); if(dedupeGroups()) save(); else save({noSync:true}); render(); Sync.onOpen();
 /* 카카오톡 등에서 "공유 → 쉬지 않는 기도"로 들어온 글 */
 (function(){ try{
   var q = new URLSearchParams(location.search);
