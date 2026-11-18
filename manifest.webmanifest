@@ -7,10 +7,12 @@
   "start_url": "./?app=swgido&v=2",
   "scope": "./",
   "display": "standalone",
-  "display_override": ["standalone"],
+  "display_override": [
+    "standalone"
+  ],
   "orientation": "any",
-  "background_color": "#111111",
-  "theme_color": "#111111",
+  "background_color": "#0E1330",
+  "theme_color": "#0E1330",
   "icons": [
     {
       "src": "icon-192.png",
