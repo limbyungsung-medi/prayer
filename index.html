@@ -409,6 +409,11 @@ input[type=search]{background:var(--bg); border:1px solid var(--accent);}
 /* 선 아이콘 */
 .ic{width:1.1em; height:1.1em; vertical-align:-.17em; margin-right:.3em; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; flex:none;}
 .mi .ic,.pact span .ic,.cbtn .ic,.iconbtn .ic{margin-right:0;}
+
+/* 카카오톡 단추: 어떤 테마에서도 카카오 노란색 */
+.btn.kk,.btn.kk:hover,.btn.kk:focus{background:#FEE500 !important; color:#191919 !important; border-color:#FEE500 !important; font-weight:800 !important; box-shadow:none;}
+.btn.kk:active{background:#F2D900 !important;}
+.btn.kk svg{color:#191919;}
 </style>
 </head>
 <body>
@@ -433,7 +438,7 @@ input[type=search]{background:var(--bg); border:1px solid var(--accent);}
 
 <script>
 "use strict";
-var APP_VERSION = "2026-11-18-1";
+var APP_VERSION = "2026-11-19-1";
 var KEY = "swgido.v1";
 
 /* ============ 날짜 ============ */
