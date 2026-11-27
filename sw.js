@@ -2,7 +2,7 @@
    앱 화면(index.html)과 글꼴을 휴대폰에 보관해 두었다가, 인터넷이 없으면 보관본으로 연다.
    인터넷이 있으면 늘 서버의 최신 화면을 먼저 받고 보관본도 새로 바꾼다.
    (기도 기록은 원래부터 휴대폰 안(localStorage)에만 저장되어 있어 따로 할 일이 없다.) */
-var CACHE = "prayer-offline-v1";
+var CACHE = "prayer-offline-v2";
 var APP_URL = new URL("./", self.location).href;
 var PRETENDARD_CSS = "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css";
 
@@ -45,6 +45,27 @@ function isAppPage(req){
   var u = new URL(req.url);
   return u.origin === self.location.origin && (u.pathname === new URL(APP_URL).pathname || /\/index\.html$/.test(u.pathname));
 }
+
+/* 0) 다른 앱에서 "공유 → 쉬지 않는 기도"로 보낸 연락처 파일(.vcf)·글
+      받은 것을 잠시 보관함(swgido-share)에 넣고 앱 화면을 연다. 앱이 꺼내 쓰고 지운다. */
+self.addEventListener("fetch", function(event){
+  var req = event.request;
+  if(req.method !== "POST") return;
+  var u = new URL(req.url);
+  if(u.origin !== self.location.origin || !/\/share-target\/?$/.test(u.pathname)) return;
+  event.respondWith((async function(){
+    var out = {title:"", text:"", url:"", files:[]};
+    try{
+      var fd = await req.formData();
+      out.title = fd.get("title") || ""; out.text = fd.get("text") || ""; out.url = fd.get("url") || "";
+      var fs = fd.getAll("file");
+      for(var i = 0; i < fs.length && i < 5; i++){ var f = fs[i]; if(f && typeof f.text === "function"){ out.files.push({name:f.name||"", type:f.type||"", text:(await f.text()).slice(0, 2000000)}); } }
+    }catch(e){}
+    var c = await caches.open("swgido-share");
+    await c.put("share-inbox", new Response(JSON.stringify(out), {headers:{"Content-Type":"application/json"}}));
+    return Response.redirect(new URL("./?app=swgido&share=inbox", self.location).href, 303);
+  })());
+});
 
 self.addEventListener("fetch", function(event){
   var req = event.request;
